@@ -1,0 +1,22 @@
+# Database (generated from Excel)
+*.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+instance/
+
+# Virtual environment
+.venv/
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+flask.pid

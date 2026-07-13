@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}登录 - {{ site_name }}{% endblock %}
+{% block topbar_title %}<h1>登录</h1>{% endblock %}
+{% block content %}
+<div class="auth-page">
+    <div class="auth-card">
+        <form method="post" class="auth-form">
+            <div class="form-row">
+                <label for="username">用户名</label>
+                <input id="username" name="username" class="cell-input" required autofocus
+                       placeholder="输入用户名" value="{{ request.form.get('username', '') }}">
+            </div>
+            <div class="form-row">
+                <label for="password">密码</label>
+                <input id="password" name="password" type="password" class="cell-input" required
+                       placeholder="输入密码">
+            </div>
+            <div class="auth-form-actions">
+                <button type="submit" class="btn btn-primary">登录</button>
+                <a href="{{ url_for('register') }}" class="btn btn-ghost">没有账号？注册</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}{{ sheet.display }} - {{ site_name }}{% endblock %}
+
+{% block topbar_title %}
+<div class="topbar-sheet">
+    <h1>{{ sheet.display }}</h1>
+    <span class="badge">{{ rows|length }} 条记录 · {{ columns|length }} 项指标</span>
+</div>
+{% endblock %}
+
+{% block topbar_actions %}
+{% if is_admin %}
+<button class="btn btn-ghost" id="addRowBtn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    <span class="btn-text">新增记录</span>
+</button>
+<button class="btn btn-ghost" id="refreshChartBtn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+    <span class="btn-text">刷新图表</span>
+</button>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<input type="hidden" id="sheetKey" value="{{ current_key }}">
+<input type="hidden" id="chartData" value='{{ chart_data_json }}'>
+
+<!-- 数据表格 -->
+<section class="card">
+    <div class="card-head">
+        <div class="card-title">
+            <span class="card-icon">▦</span> 数据表格
+        </div>
+        <div class="card-meta">单元格可直接编辑，回车或失焦自动保存</div>
+    </div>
+    <div class="table-wrap">
+        <table class="data-table" id="dataTable">
+            <thead>
+                <tr>
+                    <th class="col-idx">#</th>
+                    <th class="col-label">日期 / 编号</th>
+                    {% for c in columns %}
+                    <th title="{{ c.display }}">{{ c.display }}</th>
+                    {% endfor %}
+                    {% if is_admin %}<th class="col-op">操作</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                {% for r in rows %}
+                <tr data-id="{{ r.id }}">
+                    <td class="col-idx">{{ loop.index }}</td>
+                    <td class="col-label">
+                        {% if is_admin %}
+                        <input class="cell-input label-input" data-id="{{ r.id }}" data-field="row_label"
+                               value="{{ r.row_label }}">
+                        {% else %}
+                        <span class="cell-text">{{ r.row_label }}</span>
+                        {% endif %}
+                    </td>
+                    {% for c in columns %}
+                    <td>
+                        {% if is_admin %}
+                        <input class="cell-input num-input" data-id="{{ r.id }}" data-field="{{ c.key }}"
+                               value="{% if r[c.key] is not none %}{{ r[c.key] }}{% endif %}"
+                               placeholder="—">
+                        {% else %}
+                        <span class="cell-text">{% if r[c.key] is not none %}{{ r[c.key] }}{% else %}—{% endif %}</span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    {% if is_admin %}
+                    <td class="col-op">
+                        <button class="icon-btn del-row" data-id="{{ r.id }}" title="删除该行">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>
+                        </button>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+                {% if rows|length == 0 %}
+                <tr><td colspan="{{ columns|length + 2 if is_admin else columns|length + 1 }}" class="empty-tip">暂无数据</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- 折线图 -->
+<section class="card">
+    <div class="card-head">
+        <div class="card-title"><span class="card-icon">📈</span> 趋势折线图</div>
+        <div class="card-meta">点击图例可显示/隐藏对应指标</div>
+    </div>
+    <div class="chart-controls">
+        <label class="select-label">选择指标：</label>
+        <div class="chip-group" id="colChips"></div>
+    </div>
+    <div class="chart-box" id="lineChartContainer">
+        <div class="empty-chart-hint">请选择指标</div>
+    </div>
+</section>
+
+<!-- 预测图 -->
+<section class="card">
+    <div class="card-head">
+        <div class="card-title"><span class="card-icon">🔮</span> 趋势预测图</div>
+        <div class="card-meta">基于线性回归，预测未来 3 个时间点</div>
+    </div>
+    <div class="chart-controls">
+        <label class="select-label" for="predictSelect">预测指标：</label>
+        <select id="predictSelect" class="select-input"></select>
+        <div class="predict-info" id="predictInfo"></div>
+    </div>
+    <div class="chart-box">
+        <canvas id="predictChart"></canvas>
+    </div>
+</section>
+
+{% if is_admin %}
+<!-- 新增记录表单（模态） -->
+<div class="modal" id="addModal">
+    <div class="modal-card">
+        <div class="modal-head">
+            <h3>新增记录</h3>
+            <button class="icon-btn" id="modalCloseBtn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <label>日期 / 编号</label>
+                <input id="newRowLabel" class="cell-input" placeholder="例如 7月15号">
+            </div>
+            <div class="form-cols" id="newFormCols">
+                {% for c in columns %}
+                <div class="form-row">
+                    <label title="{{ c.display }}">{{ c.display }}</label>
+                    <input class="cell-input new-col-input" data-field="{{ c.key }}" placeholder="数值">
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-ghost" id="modalCancelBtn">取消</button>
+            <button class="btn btn-primary" id="modalSaveBtn">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/sheet.js') }}"></script>
+{% endblock %}

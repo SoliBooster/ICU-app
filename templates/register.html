@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}注册 - {{ site_name }}{% endblock %}
+{% block topbar_title %}<h1>注册</h1>{% endblock %}
+{% block content %}
+<div class="auth-page">
+    <div class="auth-card">
+        <form method="post" class="auth-form">
+            <div class="form-row">
+                <label for="username">用户名</label>
+                <input id="username" name="username" class="cell-input" required autofocus
+                       placeholder="2-20 位汉字、字母或数字" value="{{ request.form.get('username', '') }}">
+            </div>
+            <div class="form-row">
+                <label for="password">密码</label>
+                <input id="password" name="password" type="password" class="cell-input" required
+                       placeholder="至少 6 位">
+            </div>
+            <div class="form-row">
+                <label for="confirm">确认密码</label>
+                <input id="confirm" name="confirm" type="password" class="cell-input" required
+                       placeholder="再次输入密码">
+            </div>
+            <div class="auth-form-actions">
+                <button type="submit" class="btn btn-primary">注册</button>
+                <a href="{{ url_for('login') }}" class="btn btn-ghost">已有账号？登录</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

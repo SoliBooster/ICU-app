@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ site_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="layout">
+    <!-- 侧边导航 -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-logo">ICU</div>
+            <div class="brand-text">
+                <div class="brand-title">检验数据平台</div>
+                <div class="brand-sub">ICU Data Console</div>
+            </div>
+        </div>
+        <nav class="nav">
+            <div class="nav-label">检测项目</div>
+            <ul class="nav-list">
+                {% for k, s in sheets.items() %}
+                <li>
+                    <a href="{{ url_for('sheet_view', key=k) }}"
+                       class="nav-item {% if current_key == k %}active{% endif %}">
+                        <span class="nav-dot"></span>
+                        <span class="nav-text">{{ s.display }}</span>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </nav>
+        <div class="sidebar-footer">
+            {% if current_user %}
+            <div class="auth-user">
+                <div class="auth-avatar">{{ current_user.username[:1].upper() }}</div>
+                <div class="auth-info">
+                    <div class="auth-name">{{ current_user.username }}</div>
+                    <div class="auth-role">{% if current_user.role == 'admin' %}管理员{% else %}普通用户{% endif %}</div>
+                </div>
+                <a href="{{ url_for('logout') }}" class="auth-logout" title="退出登录">退出</a>
+            </div>
+            {% else %}
+            <div class="auth-guest">
+                <div class="auth-hint">登录后可编辑数据</div>
+                <div class="auth-links">
+                    <a href="{{ url_for('login') }}" class="auth-link">登录</a>
+                    <span class="auth-divider">|</span>
+                    <a href="{{ url_for('register') }}" class="auth-link">注册</a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </aside>
+
+    <!-- 主内容 -->
+    <div class="main">
+        <header class="topbar">
+            <button class="menu-toggle" id="menuToggle" aria-label="菜单">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="topbar-title">
+                {% block topbar_title %}{% endblock %}
+            </div>
+            <div class="topbar-actions">
+                {% block topbar_actions %}{% endblock %}
+            </div>
+        </header>
+
+        <main class="content">
+            <!-- Flash 消息 -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="flash-wrap">
+                {% for category, message in messages %}
+                <div class="flash flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="footer">
+            <span>{{ site_name }} · 基于 Flask + SQLite</span>
+            <span class="footer-right">数据来源：ICU数据.xlsx</span>
+        </footer>
+    </div>
+</div>
+
+<!-- 移动端遮罩 -->
+<div class="overlay" id="overlay"></div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
