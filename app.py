@@ -872,11 +872,14 @@ def reports_list():
 
     patients = dictify_all(query_all("SELECT id, name FROM patients ORDER BY id"))
 
-    # 按日期分组
+    # 按日期分组（优先用 report_date，没有则 fallback 到 created_at）
     from collections import defaultdict
     report_groups = defaultdict(list)
     for r in rows:
-        date_str = str(r['created_at'])[:10] if r.get('created_at') else '未知日期'
+        if r.get('report_date'):
+            date_str = str(r['report_date'])[:10]
+        else:
+            date_str = str(r['created_at'])[:10] if r.get('created_at') else '未知日期'
         report_groups[date_str].append(r)
     # 按日期倒序排序
     sorted_dates = sorted(report_groups.keys(), reverse=True)
@@ -949,6 +952,7 @@ def report_edit(report_id):
     title = request.form.get('title', '').strip()
     description = request.form.get('description', '').strip()
     patient_id = request.form.get('patient_id', 1)
+    report_date = request.form.get('report_date', '').strip()
     file = request.files.get('image')
 
     if not title:
@@ -966,10 +970,16 @@ def report_edit(report_id):
         image_rel = f'uploads/reports/{unique_name}'
         execute(f"UPDATE reports SET image_path={P} WHERE id={P}", (image_rel, report_id))
 
-    execute(
-        f"UPDATE reports SET title={P}, description={P}, patient_id={P} WHERE id={P}",
-        (title, description, int(patient_id), report_id)
-    )
+    if report_date:
+        execute(
+            f"UPDATE reports SET title={P}, description={P}, patient_id={P}, report_date={P} WHERE id={P}",
+            (title, description, int(patient_id), report_date, report_id)
+        )
+    else:
+        execute(
+            f"UPDATE reports SET title={P}, description={P}, patient_id={P} WHERE id={P}",
+            (title, description, int(patient_id), report_id)
+        )
 
     flash('报告已更新 ✓', 'success')
     return redirect(url_for('reports_list'))
@@ -1155,10 +1165,17 @@ if __name__ == '__main__':
                         title VARCHAR(200) NOT NULL,
                         description TEXT,
                         image_path VARCHAR(500) NOT NULL,
+                        report_date DATE,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """)
+            else:
+                # 检测 report_date 列是否存在
+                cur.execute("SHOW COLUMNS FROM reports LIKE 'report_date'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE reports ADD COLUMN report_date DATE")
+                    missing_tables.append('reports.report_date')
             cur.execute("SHOW TABLES LIKE 'indicator_explanations'")
             if not cur.fetchone():
                 missing_tables.append('indicator_explanations')
@@ -1185,10 +1202,18 @@ if __name__ == '__main__':
                         title TEXT NOT NULL,
                         description TEXT,
                         image_path TEXT NOT NULL,
+                        report_date TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
+            else:
+                # 检测 report_date 列是否存在
+                cur.execute("PRAGMA table_info(reports)")
+                cols = [r['name'] for r in cur.fetchall()]
+                if 'report_date' not in cols:
+                    cur.execute("ALTER TABLE reports ADD COLUMN report_date TEXT")
+                    missing_tables.append('reports.report_date')
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='indicator_explanations'")
             if not cur.fetchone():
                 missing_tables.append('indicator_explanations')
@@ -1207,7 +1232,7 @@ if __name__ == '__main__':
         conn.commit()
         conn.close()
         if missing_tables:
-            print(f"已自动创建缺失的表：{', '.join(missing_tables)}")
+            print(f"已自动创建缺失的表/列：{', '.join(missing_tables)}")
     except Exception as e:
         print(f"自动建表检查跳过（非关键）：{e}")
 

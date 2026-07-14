@@ -47,6 +47,9 @@
                     {% endfor %}
                     <span class="badge badge-patient">{{ ns.pname }}</span>
                     {% endif %}
+                    {% if r.report_date %}
+                    <span class="badge" style="background: var(--primary-soft); color: var(--primary);">{{ r.report_date }}</span>
+                    {% endif %}
                 </div>
                 <div class="report-collapse-actions">
                     {% if is_admin %}

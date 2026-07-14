@@ -22,6 +22,7 @@ def migrate():
                 title VARCHAR(200) NOT NULL,
                 description TEXT,
                 image_path VARCHAR(500) NOT NULL,
+                report_date DATE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -34,6 +35,7 @@ def migrate():
                 title TEXT NOT NULL,
                 description TEXT,
                 image_path TEXT NOT NULL,
+                report_date TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )

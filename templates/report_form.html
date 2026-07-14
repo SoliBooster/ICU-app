@@ -18,6 +18,15 @@
                        placeholder="例如：2026-07-14 血常规检查单">
             </div>
             <div class="form-row">
+                <label for="report_date">报告日期</label>
+                <input id="report_date" name="report_date" type="date" class="cell-input"
+                       value="{{ report.report_date if report and report.report_date else '' }}"
+                       style="max-width: 200px;">
+                <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
+                    留空默认使用今天的日期，可手动改为前几天的日期用于补交
+                </div>
+            </div>
+            <div class="form-row">
                 <label for="patient_id">所属病人</label>
                 <select id="patient_id" name="patient_id" class="cell-input">
                     {% for p in patients %}
