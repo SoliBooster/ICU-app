@@ -12,7 +12,7 @@
 {% endblock %}
 
 {% block content %}
-{% if reports|length == 0 %}
+{% if report_groups|length == 0 %}
 <section class="card">
     <div class="card-body" style="text-align: center; padding: 3rem 1rem;">
         <div style="font-size: 3rem; margin-bottom: 1rem;">📋</div>
@@ -26,50 +26,79 @@
 </section>
 {% endif %}
 
-{% for r in reports %}
-<section class="card report-card">
-    <div class="card-head">
-        <div class="card-title">
-            <span class="card-icon">📄</span>
-            {{ r.title }}
-            <span class="badge">{{ r.created_at }}</span>
-            {% if r.patient_id %}
-            {% set pname = namespace(name='') %}
-            {% for p in patients %}
-                {% if p.id == r.patient_id %}{% set pname.name = p.name %}{% endif %}
-            {% endfor %}
-            <span class="badge badge-patient">{{ pname.name }}</span>
-            {% endif %}
-        </div>
-        {% if is_admin %}
-        <div class="card-actions">
-            <a href="{{ url_for('report_edit', report_id=r.id) }}" class="btn btn-ghost btn-sm">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-                编辑
-            </a>
-            <form method="post" action="{{ url_for('report_delete', report_id=r.id) }}"
-                  onsubmit="return confirm('确定删除「{{ r.title }}」吗？');" style="display:inline;">
-                <button type="submit" class="btn btn-ghost btn-sm" style="color: var(--danger);">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
-                    删除
-                </button>
-            </form>
-        </div>
-        {% endif %}
+{% for date_str, reports in report_groups %}
+<section class="date-group">
+    <div class="date-group-header">
+        <span class="date-group-icon">📁</span>
+        <span class="date-group-title">{{ date_str }}</span>
+        <span class="badge">{{ reports|length }} 份</span>
     </div>
-    <div class="card-body report-body">
-        <div class="report-image-wrap">
-            <a href="{{ url_for('static', filename=r.image_path) }}" target="_blank">
-                <img src="{{ url_for('static', filename=r.image_path) }}" alt="{{ r.title }}" class="report-image">
-            </a>
+    <div class="date-group-body">
+        {% for r in reports %}
+        <div class="report-collapse">
+            <div class="report-collapse-head" onclick="toggleReport(this)">
+                <div class="report-collapse-info">
+                    <span class="report-collapse-icon">📄</span>
+                    <span class="report-collapse-title">{{ r.title }}</span>
+                    {% if r.patient_id %}
+                    {% set ns = namespace(pname='') %}
+                    {% for p in patients %}
+                        {% if p.id == r.patient_id %}{% set ns.pname = p.name %}{% endif %}
+                    {% endfor %}
+                    <span class="badge badge-patient">{{ ns.pname }}</span>
+                    {% endif %}
+                </div>
+                <div class="report-collapse-actions">
+                    {% if is_admin %}
+                    <a href="{{ url_for('report_edit', report_id=r.id) }}" class="btn btn-ghost btn-sm"
+                       onclick="event.stopPropagation();" title="编辑">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                    </a>
+                    <form method="post" action="{{ url_for('report_delete', report_id=r.id) }}"
+                          onsubmit="return confirm('确定删除「{{ r.title }}」吗？');" style="display:inline;">
+                        <button type="submit" class="btn btn-ghost btn-sm" style="color: var(--danger);"
+                                onclick="event.stopPropagation();" title="删除">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                        </button>
+                    </form>
+                    {% endif %}
+                    <span class="report-collapse-arrow">▶</span>
+                </div>
+            </div>
+            <div class="report-collapse-body" style="display: none;">
+                <div class="report-image-wrap">
+                    <a href="{{ url_for('static', filename=r.image_path) }}" target="_blank">
+                        <img src="{{ url_for('static', filename=r.image_path) }}" alt="{{ r.title }}" class="report-image">
+                    </a>
+                </div>
+                {% if r.description %}
+                <div class="report-desc">
+                    <div class="report-desc-label">📝 说明：</div>
+                    <div class="report-desc-text">{{ r.description }}</div>
+                </div>
+                {% endif %}
+            </div>
         </div>
-        {% if r.description %}
-        <div class="report-desc">
-            <div class="report-desc-label">📝 说明：</div>
-            <div class="report-desc-text">{{ r.description }}</div>
-        </div>
-        {% endif %}
+        {% endfor %}
     </div>
 </section>
 {% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleReport(header) {
+    var body = header.nextElementSibling;
+    var arrow = header.querySelector('.report-collapse-arrow');
+    if (body.style.display === 'none') {
+        body.style.display = 'block';
+        arrow.textContent = '▼';
+        header.classList.add('expanded');
+    } else {
+        body.style.display = 'none';
+        arrow.textContent = '▶';
+        header.classList.remove('expanded');
+    }
+}
+</script>
 {% endblock %}

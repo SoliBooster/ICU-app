@@ -872,8 +872,18 @@ def reports_list():
 
     patients = dictify_all(query_all("SELECT id, name FROM patients ORDER BY id"))
 
+    # 按日期分组
+    from collections import defaultdict
+    report_groups = defaultdict(list)
+    for r in rows:
+        date_str = str(r['created_at'])[:10] if r.get('created_at') else '未知日期'
+        report_groups[date_str].append(r)
+    # 按日期倒序排序
+    sorted_dates = sorted(report_groups.keys(), reverse=True)
+    report_groups_ordered = [(d, report_groups[d]) for d in sorted_dates]
+
     return render_template('reports.html',
-                           reports=rows,
+                           report_groups=report_groups_ordered,
                            patients=patients,
                            is_admin=is_admin_user)
 
