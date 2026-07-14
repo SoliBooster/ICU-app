@@ -1,7 +1,6 @@
 # ================= ICU 数据管理平台 =================
 # 架构风格参考 farm-mall：一个 py 文件到底，清晰分段
 # 功能：8 个分表 CRUD + 折线图 + 线性回归预测
-
 import os
 import re
 import json
@@ -14,7 +13,7 @@ from sklearn.linear_model import LinearRegression
 from config import DB_PATH, EXCEL_PATH, PORT, SECRET_KEY
 from db import get_db, query_one, query_all, execute, dictify, dictify_all, placeholder, use_mysql
 
-# SQL 占位符（SQLite用 ?, MySQL用 %s）
+# SQL 占位符（SQLite用?, MySQL用%s）
 P = placeholder()
 
 # ================= 1. 初始化 Flask =================
@@ -85,11 +84,13 @@ def parse_float(v):
         return None
 
 
-def get_rows(sheet_key):
-    """获取某个分表的所有数据行"""
+def get_rows(sheet_key, patient_id=None):
+    """获取某个分表的数据行，可选按患者筛选"""
     info = SHEETS.get(sheet_key)
     if not info:
         return []
+    if patient_id:
+        return dictify_all(query_all(f"SELECT * FROM {info['table_name']} WHERE patient_id={P} ORDER BY id", (patient_id,)))
     return dictify_all(query_all(f"SELECT * FROM {info['table_name']} ORDER BY id"))
 
 
@@ -196,20 +197,50 @@ def admin_required(f):
     return wrapper
 
 
+def get_current_patient():
+    """获取当前选中病人"""
+    pid = session.get('patient_id')
+    if not pid:
+        return None
+    row = query_one(f"SELECT id, name FROM patients WHERE id={P}", (pid,))
+    return dictify(row)
+
+
+def patient_selected_required(f):
+    """病人选择验证装饰器（普通用户必须选病人）"""
+    from functools import wraps
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        user = current_user()
+        if user and user['role'] != 'admin':
+            if not session.get('patient_id'):
+                flash('请先选择要查看的病人。', 'info')
+                return redirect(url_for('select_patient'))
+            patient = get_current_patient()
+            if not patient:
+                session.pop('patient_id', None)
+                flash('请重新选择病人。', 'info')
+                return redirect(url_for('select_patient'))
+        return f(*args, **kwargs)
+    return wrapper
+
+
 # ================= 5. 上下文处理器 =================
 @app.context_processor
 def inject_globals():
     """全局注入变量到所有模板"""
     user = current_user()
+    patient = get_current_patient()
     return {
         'sheets': SHEETS,
         'site_name': 'ICU 检验数据平台',
         'current_user': user,
         'is_admin': user and user['role'] == 'admin',
+        'current_patient': patient,
     }
 
 
-# ================= 6. 登录 / 注册 / 登出 =================
+# ================= 6. 登录 / 注册 / 登出 / 病人选择 =================
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -226,6 +257,7 @@ def login():
 
     session['user_id'] = user['id']
     session.permanent = True
+    session.pop('patient_id', None)
     flash(f'欢迎回来，{user["username"]}。', 'success')
     return redirect(url_for('index'))
 
@@ -241,10 +273,10 @@ def register():
 
     # 校验
     if len(username) < 2 or len(username) > 20:
-        flash('用户名长度 2-20 位。', 'danger')
+        flash('用户名长度2-20位。', 'danger')
         return render_template('register.html')
     if len(password) < 6:
-        flash('密码至少 6 位。', 'danger')
+        flash('密码至少6位。', 'danger')
         return render_template('register.html')
     if password != confirm:
         flash('两次密码输入不一致。', 'danger')
@@ -267,12 +299,59 @@ def register():
 def logout():
     session.clear()
     flash('已退出登录。', 'info')
-    return redirect(url_for('index'))
+    return redirect(url_for('login'))
+
+
+@app.route('/select_patient', methods=['GET', 'POST'])
+@login_required
+def select_patient():
+    """普通用户选择病人并输入查看密码"""
+    user = current_user()
+    if user and user['role'] == 'admin':
+        return redirect(url_for('index'))
+
+    patients = dictify_all(query_all("SELECT id, name FROM patients ORDER BY id"))
+
+    if request.method == 'POST':
+        patient_id = request.form.get('patient_id', '').strip()
+        view_password = request.form.get('view_password', '')
+
+        if not patient_id:
+            flash('请选择病人。', 'danger')
+            return render_template('select_patient.html', patients=patients)
+
+        patient = dictify(query_one(f"SELECT * FROM patients WHERE id={P}", (patient_id,)))
+        if not patient:
+            flash('病人不存在。', 'danger')
+            return render_template('select_patient.html', patients=patients)
+
+        if not check_password_hash(patient['view_password_hash'], view_password):
+            flash('查看密码错误。', 'danger')
+            return render_template('select_patient.html', patients=patients)
+
+        session['patient_id'] = patient['id']
+        flash(f'已进入 {patient["name"]} 的检查数据。', 'success')
+        return redirect(url_for('index'))
+
+    return render_template('select_patient.html', patients=patients)
+
+
+@app.route('/switch_patient')
+@login_required
+def switch_patient():
+    """切换病人（清除当前病人选择）"""
+    session.pop('patient_id', None)
+    return redirect(url_for('select_patient'))
 
 
 # ================= 7. 首页 =================
 @app.route('/')
+@login_required
 def index():
+    user = current_user()
+    # 普通用户必须选择病人
+    if user and user['role'] != 'admin' and not session.get('patient_id'):
+        return redirect(url_for('select_patient'))
     if not SHEETS:
         return render_template('error.html', message='数据库未初始化', code=500), 500
     first_key = list(SHEETS.keys())[0]
@@ -281,12 +360,16 @@ def index():
 
 # ================= 8. 分表详情页 =================
 @app.route('/sheet/<key>')
+@login_required
+@patient_selected_required
 def sheet_view(key):
     info = SHEETS.get(key)
     if not info:
         abort(404)
 
-    rows = get_rows(key)
+    user = current_user()
+    patient_id = session.get('patient_id') if (user and user['role'] != 'admin') else None
+    rows = get_rows(key, patient_id)
     columns = info['columns']
     predictions = compute_predictions(rows, columns)
     flabels = future_labels([r['row_label'] for r in rows], 3)
@@ -305,20 +388,24 @@ def sheet_view(key):
                            rows=rows,
                            columns=columns,
                            chart_data_json=json.dumps(chart_data, ensure_ascii=False, default=str),
-                           is_admin=current_user() and current_user()['role'] == 'admin')
+                           is_admin=user and user['role'] == 'admin')
 
 
 # ================= 9. API：获取数据 =================
 @app.route('/api/data/<key>')
+@login_required
+@patient_selected_required
 def api_get_data(key):
     info = SHEETS.get(key)
     if not info:
         return jsonify({'error': 'not found'}), 404
-    rows = get_rows(key)
+    user = current_user()
+    patient_id = session.get('patient_id') if (user and user['role'] != 'admin') else None
+    rows = get_rows(key, patient_id)
     return jsonify({'columns': info['columns'], 'rows': rows})
 
 
-# ================= 10. API：新增记录（仅管理员）=================
+# ================= 10. API：新增记录（仅管理员） =================
 @app.route('/api/data/<key>/row', methods=['POST'])
 @admin_required
 def api_add_row(key):
@@ -340,12 +427,19 @@ def api_add_row(key):
         col_vals.append(parse_float(v) if v not in (None, '') else None)
         placeholders.append(P)
 
+    # 管理员添加记录时自动关联到当前病人（如果有选）
+    patient_id = session.get('patient_id')
+    if patient_id:
+        col_names.append('patient_id')
+        col_vals.append(patient_id)
+        placeholders.append(P)
+
     sql = f"INSERT INTO {info['table_name']}({', '.join(col_names)}) VALUES({','.join(placeholders)})"
     new_id = execute(sql, col_vals)
     return jsonify({'ok': True, 'id': new_id})
 
 
-# ================= 11. API：更新单元格（仅管理员）=================
+# ================= 11. API：更新单元格（仅管理员） =================
 @app.route('/api/data/<key>/cell', methods=['POST'])
 @admin_required
 def api_update_cell(key):
@@ -372,7 +466,7 @@ def api_update_cell(key):
     return jsonify({'ok': True, 'value': new_val})
 
 
-# ================= 12. API：删除记录（仅管理员）=================
+# ================= 12. API：删除记录（仅管理员） =================
 @app.route('/api/data/<key>/row/<int:row_id>', methods=['DELETE'])
 @admin_required
 def api_delete_row(key, row_id):
@@ -385,12 +479,16 @@ def api_delete_row(key, row_id):
 
 # ================= 13. API：预测 =================
 @app.route('/api/predict/<key>')
+@login_required
+@patient_selected_required
 def api_predict(key):
     info = SHEETS.get(key)
     if not info:
         return jsonify({'error': 'not found'}), 404
 
-    rows = get_rows(key)
+    user = current_user()
+    patient_id = session.get('patient_id') if (user and user['role'] != 'admin') else None
+    rows = get_rows(key, patient_id)
     predictions = compute_predictions(rows, info['columns'])
     flabels = future_labels([r['row_label'] for r in rows], 3)
     return jsonify({
@@ -398,6 +496,63 @@ def api_predict(key):
         'future_labels': flabels,
         'predictions': predictions,
     })
+
+
+# ================= 14. 管理员：病人管理 =================
+@app.route('/admin/patients', methods=['GET', 'POST'])
+@admin_required
+def admin_patients():
+    """管理员管理病人"""
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        patient_id = request.form.get('patient_id', '')
+        name = request.form.get('name', '').strip()
+        view_password = request.form.get('view_password', '')
+
+        if action == 'add':
+            if not name:
+                flash('请输入病人姓名。', 'danger')
+            elif len(view_password) < 4:
+                flash('查看密码至少4位。', 'danger')
+            else:
+                existing = query_one(f"SELECT id FROM patients WHERE name={P}", (name,))
+                if existing:
+                    flash(f'病人 "{name}" 已存在。', 'danger')
+                else:
+                    execute(
+                        f"INSERT INTO patients(name, view_password_hash) VALUES({P},{P})",
+                        (name, generate_password_hash(view_password))
+                    )
+                    flash(f'病人 "{name}" 已添加。', 'success')
+
+        elif action == 'edit' and patient_id:
+            if not name:
+                flash('请输入病人姓名。', 'danger')
+            else:
+                if view_password:
+                    execute(
+                        f"UPDATE patients SET name={P}, view_password_hash={P} WHERE id={P}",
+                        (name, generate_password_hash(view_password), patient_id)
+                    )
+                    flash('病人信息已更新。', 'success')
+                else:
+                    execute(
+                        f"UPDATE patients SET name={P} WHERE id={P}",
+                        (name, patient_id)
+                    )
+                    flash('病人姓名已更新。', 'success')
+
+        elif action == 'delete' and patient_id:
+            execute(f"DELETE FROM patients WHERE id={P}", (patient_id,))
+            flash('病人已删除。', 'success')
+            # 如果当前选中的是这个病人，清除选择
+            if session.get('patient_id') == int(patient_id):
+                session.pop('patient_id', None)
+
+        return redirect(url_for('admin_patients'))
+
+    patients = dictify_all(query_all("SELECT id, name, created_at FROM patients ORDER BY id"))
+    return render_template('admin_patients.html', patients=patients)
 
 
 # ================= 14. 错误处理 =================

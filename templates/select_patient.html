@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}选择病人 - {{ site_name }}{% endblock %}
+{% block topbar_title %}<h1>选择病人</h1>{% endblock %}
+{% block content %}
+<div class="auth-page">
+    <div class="auth-card" style="max-width: 520px;">
+        <p style="text-align: center; color: var(--text-muted); margin-bottom: 1.5rem;">
+            请选择你要查看的病人，并输入该病人的查看密码
+        </p>
+        <form method="post" class="auth-form">
+            <div class="form-row">
+                <label for="patient_id">选择病人</label>
+                <select id="patient_id" name="patient_id" class="cell-input" required>
+                    <option value="">-- 请选择 --</option>
+                    {% for p in patients %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-row">
+                <label for="view_password">查看密码</label>
+                <input id="view_password" name="view_password" type="password" class="cell-input" required
+                       placeholder="输入该病人的查看密码">
+            </div>
+            <div class="auth-form-actions">
+                <button type="submit" class="btn btn-primary">确认查看</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -126,10 +126,12 @@ def init_db(force=False):
 
         # 2. 创建动态 SQL 表
         col_defs = ', '.join([f'col_{i + 1} {ct}' for i in range(len(col_displays))])
+        pid_col = 'patient_id INT DEFAULT 1' if use_mysql() else 'patient_id INTEGER DEFAULT 1'
         if use_mysql():
             cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS `{tname}` (
                     id INT AUTO_INCREMENT PRIMARY KEY,
+                    patient_id INT DEFAULT 1,
                     row_label {tt} DEFAULT '',
                     {col_defs}
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -138,6 +140,7 @@ def init_db(force=False):
             cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS {tname} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    patient_id INTEGER DEFAULT 1,
                     row_label TEXT DEFAULT '',
                     {col_defs}
                 )
@@ -216,6 +219,41 @@ def init_db(force=False):
                 ('admin', generate_password_hash('admICU123456'), 'admin')
             )
             print('已创建管理员账号：admin')
+
+    # 7. 创建病人表
+    if use_mysql():
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS patients (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                view_password_hash VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+    else:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS patients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                view_password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+    # 8. 预置默认病人
+    if use_mysql():
+        cur.execute(f"SELECT id FROM patients WHERE name={p}", ('杜桂琴',))
+        patient_row = cur.fetchone()
+    else:
+        cur.execute(f"SELECT id FROM patients WHERE name={p}", ('杜桂琴',))
+        patient_row = cur.fetchone()
+
+    if not patient_row:
+        cur.execute(
+            f"INSERT INTO patients(name, view_password_hash) VALUES({p},{p})",
+            ('杜桂琴', generate_password_hash('123456'))
+        )
+        print('已创建默认患者：杜桂琴（查看密码：123456）')
 
     conn.commit()
     conn.close()

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}病人管理 - {{ site_name }}{% endblock %}
+{% block topbar_title %}<h1>病人管理</h1>{% endblock %}
+{% block content %}
+
+<!-- 添加病人 -->
+<section class="card">
+    <div class="card-head">
+        <div class="card-title"><span class="card-icon">+</span> 添加病人</div>
+    </div>
+    <div class="card-body">
+        <form method="post" class="auth-form" style="max-width: 500px;">
+            <input type="hidden" name="action" value="add">
+            <div class="form-row">
+                <label for="name_add">病人姓名</label>
+                <input id="name_add" name="name" class="cell-input" required placeholder="例如：张三">
+            </div>
+            <div class="form-row">
+                <label for="password_add">查看密码</label>
+                <input id="password_add" name="view_password" type="text" class="cell-input" required
+                       placeholder="至少4位，家属用此密码查看数据" minlength="4">
+            </div>
+            <div class="auth-form-actions">
+                <button type="submit" class="btn btn-primary">添加病人</button>
+            </div>
+        </form>
+    </div>
+</section>
+
+<!-- 病人列表 -->
+<section class="card">
+    <div class="card-head">
+        <div class="card-title"><span class="card-icon">&#9776;</span> 已有病人 ({{ patients|length }})</div>
+    </div>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>姓名</th>
+                    <th>创建时间</th>
+                    <th class="col-op">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in patients %}
+                <tr>
+                    <td>{{ p.id }}</td>
+                    <td>
+                        <form method="post" style="display: inline-flex; gap: 6px; align-items: center;">
+                            <input type="hidden" name="action" value="edit">
+                            <input type="hidden" name="patient_id" value="{{ p.id }}">
+                            <input name="name" value="{{ p.name }}" class="cell-input" style="width: 120px;" required>
+                            <input name="view_password" type="text" class="cell-input" style="width: 140px;" placeholder="新密码（留空不改）">
+                            <button type="submit" class="btn btn-ghost btn-sm">更新</button>
+                        </form>
+                    </td>
+                    <td>{{ p.created_at }}</td>
+                    <td class="col-op">
+                        <form method="post" onsubmit="return confirm('确定删除病人「{{ p.name }}」吗？');" style="display:inline;">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="patient_id" value="{{ p.id }}">
+                            <button type="submit" class="icon-btn del-row" title="删除病人">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if patients|length == 0 %}
+                <tr><td colspan="4" class="empty-tip">暂无病人，请先添加</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+{% endblock %}
