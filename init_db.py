@@ -6,9 +6,10 @@
 import os
 import re
 import math
+import pymysql
 import openpyxl
 from werkzeug.security import generate_password_hash
-from config import DB_PATH, EXCEL_PATH, MYSQL_DB
+from config import DB_PATH, EXCEL_PATH, MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DB
 from db import get_db, use_mysql, placeholder
 
 
@@ -70,8 +71,7 @@ def init_db(force=False):
         finally:
             conn.close()
 
-    import pymysql
-    from config import MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD
+
 
     wb = openpyxl.load_workbook(EXCEL_PATH, data_only=True)
     conn = get_db()
