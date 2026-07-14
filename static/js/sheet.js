@@ -620,6 +620,100 @@
         if (btn) btn.disabled = false;
     }
 
+    // ---------- 今日简报 ----------
+    function initBrief() {
+        var briefCard = $('#briefCard');
+        if (!briefCard) return;
+
+        var patientId = $('#briefPatientId').value;
+        if (!patientId) {
+            briefCard.style.display = 'none';
+            return;
+        }
+
+        var contentEl = $('#briefContent');
+        var editWrap = $('#briefEditWrap');
+        var textarea = $('#briefTextarea');
+        var editBtn = $('#briefEditBtn');
+        var saveBtn = $('#briefSaveBtn');
+        var cancelBtn = $('#briefCancelBtn');
+        var dateEl = $('#briefDate');
+
+        // 显示今天的日期
+        var today = new Date();
+        dateEl.textContent = today.getFullYear() + '-' +
+            String(today.getMonth() + 1).padStart(2, '0') + '-' +
+            String(today.getDate()).padStart(2, '0');
+
+        // 加载简报
+        function loadBrief() {
+            fetch(apiUrl('/api/brief/' + patientId))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.content) {
+                        contentEl.innerHTML = data.content.replace(/\n/g, '<br>');
+                    } else {
+                        contentEl.innerHTML = '<p class="brief-placeholder">暂无简报，管理员可点击编辑添加</p>';
+                    }
+                })
+                .catch(function () { /* ignore */ });
+        }
+
+        loadBrief();
+
+        if (!editBtn) return;
+
+        // 编辑模式
+        editBtn.addEventListener('click', function () {
+            var currentText = contentEl.textContent;
+            if (currentText === '暂无简报，管理员可点击编辑添加' || currentText === '') {
+                textarea.value = '';
+            } else {
+                // 把 <br> 转回 \n
+                var html = contentEl.innerHTML;
+                textarea.value = html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
+            }
+            contentEl.style.display = 'none';
+            editBtn.style.display = 'none';
+            editWrap.style.display = 'block';
+            textarea.focus();
+        });
+
+        function cancelEdit() {
+            editWrap.style.display = 'none';
+            contentEl.style.display = 'block';
+            if (editBtn) editBtn.style.display = '';
+        }
+
+        cancelBtn.addEventListener('click', cancelEdit);
+
+        saveBtn.addEventListener('click', function () {
+            var content = textarea.value.trim();
+            saveBtn.disabled = true;
+            saveBtn.textContent = '保存中…';
+
+            fetch(apiUrl('/api/brief/' + patientId), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: content })
+            }).then(function (r) { return r.json(); }).then(function (res) {
+                if (res.ok) {
+                    showToast('简报已保存 ✓', 'success');
+                    loadBrief();
+                    cancelEdit();
+                } else {
+                    showToast(res.error || '保存失败', 'error');
+                }
+                saveBtn.disabled = false;
+                saveBtn.textContent = '保存简报';
+            }).catch(function () {
+                showToast('网络错误', 'error');
+                saveBtn.disabled = false;
+                saveBtn.textContent = '保存简报';
+            });
+        });
+    }
+
     // ---------- 启动 ----------
     document.addEventListener('DOMContentLoaded', function () {
         initColChips();
@@ -632,5 +726,6 @@
         bindRefRange();
         bindRefreshChart();
         initColumnDrag();
+        initBrief();
     });
 })();

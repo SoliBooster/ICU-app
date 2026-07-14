@@ -1140,6 +1140,34 @@ def explain_edit(sheet_key, col_key):
     return redirect(url_for('explain_view', sheet_key=sheet_key, col_key=col_key))
 
 
+# ================= 23. 今日简报 =================
+@app.route('/api/brief/<int:patient_id>', methods=['GET', 'POST'])
+@login_required
+def api_brief(patient_id):
+    """获取/设置病人今日简报"""
+    if request.method == 'GET':
+        brief = dictify(query_one(
+            f"SELECT * FROM daily_briefs WHERE patient_id={P}", (patient_id,)
+        ))
+        return jsonify({'content': brief['content'] if brief else '', 'updated_at': str(brief['updated_at']) if brief else ''})
+
+    # POST: 仅管理员
+    user = current_user()
+    if not user or user['role'] != 'admin':
+        return jsonify({'error': '仅管理员可操作'}), 403
+
+    payload = request.get_json(force=True) or {}
+    content = payload.get('content', '').strip()
+
+    existing = query_one(f"SELECT id FROM daily_briefs WHERE patient_id={P}", (patient_id,))
+    if existing:
+        execute(f"UPDATE daily_briefs SET content={P} WHERE patient_id={P}", (content, patient_id))
+    else:
+        execute(f"INSERT INTO daily_briefs(patient_id, content) VALUES({P},{P})", (patient_id, content))
+
+    return jsonify({'ok': True, 'content': content})
+
+
 # ================= 18. 启动入口 =================
 if __name__ == '__main__':
     load_sheets()
@@ -1227,6 +1255,33 @@ if __name__ == '__main__':
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE(sheet_key, col_key)
+                    )
+                """)
+        # 检测 daily_briefs 表
+        if use_mysql():
+            cur.execute("SHOW TABLES LIKE 'daily_briefs'")
+            if not cur.fetchone():
+                missing_tables.append('daily_briefs')
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS daily_briefs (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        patient_id INT NOT NULL DEFAULT 1,
+                        content TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uq_brief_patient (patient_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """)
+        else:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_briefs'")
+            if not cur.fetchone():
+                missing_tables.append('daily_briefs')
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS daily_briefs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        patient_id INTEGER NOT NULL DEFAULT 1,
+                        content TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(patient_id)
                     )
                 """)
         conn.commit()
