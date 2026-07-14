@@ -20,3 +20,10 @@ Thumbs.db
 # Logs
 *.log
 flask.pid
+
+# Temp / debug
+*.tmp
+*
+.tmp_*
+test_*
+tmp_*
