@@ -46,7 +46,7 @@ def load_sheets():
         conn = get_db()
         cur = conn.cursor()
         if use_mysql():
-            cur.execute("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME LIKE %s", (f'%{key.replace("s_", "_")}',))
+            cur.execute("SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME LIKE %s", (f'%{key.replace("s_", "_")}',))
         else:
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE ?", (f'%{key.replace("s_", "_")}',))
         row = cur.fetchone()
