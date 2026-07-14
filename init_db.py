@@ -280,6 +280,62 @@ def init_db(force=False):
         """)
     print('已创建参考范围表')
 
+    # ===== 10. 创建图片报告表 =====
+    if use_mysql():
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS reports (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                patient_id INT NOT NULL DEFAULT 1,
+                title VARCHAR(200) NOT NULL,
+                description TEXT,
+                image_path VARCHAR(500) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+    else:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_id INTEGER NOT NULL DEFAULT 1,
+                title TEXT NOT NULL,
+                description TEXT,
+                image_path TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    print('已创建报告表（reports）')
+
+    # ===== 11. 创建指标解释表 =====
+    if use_mysql():
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS indicator_explanations (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                sheet_key VARCHAR(50) NOT NULL,
+                col_key VARCHAR(50) NOT NULL,
+                content TEXT,
+                images TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_explain (sheet_key, col_key)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+    else:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS indicator_explanations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sheet_key TEXT NOT NULL,
+                col_key TEXT NOT NULL,
+                content TEXT,
+                images TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(sheet_key, col_key)
+            )
+        """)
+    print('已创建指标解释表（indicator_explanations）')
+
     conn.commit()
     conn.close()
     wb.close()

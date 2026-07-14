@@ -49,9 +49,11 @@
                     <th class="col-idx">#</th>
                     <th class="col-label">日期 / 编号</th>
                     {% for c in columns %}
-                    <th>
+                    <th draggable="true" data-col-key="{{ c.key }}" class="col-draggable">
                         <div class="th-wrap">
-                            <span class="th-name" title="{{ c.display }}">{{ c.display }}</span>
+                            <span class="drag-handle" title="拖拽调整列顺序">⠿</span>
+                            <a href="{{ url_for('explain_view', sheet_key=current_key, col_key=c.key) }}"
+                               class="th-name" title="查看「{{ c.display }}」的解释">{{ c.display }}</a>
                             {% set rr = ref_ranges.get(c.key, {}) %}
                             {% if rr.get('ref_min') is not none or rr.get('ref_max') is not none %}
                             <span class="th-ref">

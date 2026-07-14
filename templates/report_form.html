@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{% if edit_mode %}编辑报告{% else %}提交报告{% endif %} - {{ site_name }}{% endblock %}
+{% block topbar_title %}<h1>{% if edit_mode %}编辑报告{% else %}提交报告{% endif %}</h1>{% endblock %}
+{% block content %}
+<section class="card">
+    <div class="card-head">
+        <div class="card-title">
+            <span class="card-icon">{% if edit_mode %}✏️{% else %}📤{% endif %}</span>
+            {% if edit_mode %}编辑报告{% else %}提交新报告{% endif %}
+        </div>
+    </div>
+    <div class="card-body">
+        <form method="post" enctype="multipart/form-data" class="report-form">
+            <div class="form-row">
+                <label for="title">报告标题</label>
+                <input id="title" name="title" class="cell-input" required
+                       value="{{ report.title if report else '' }}"
+                       placeholder="例如：2026-07-14 血常规检查单">
+            </div>
+            <div class="form-row">
+                <label for="patient_id">所属病人</label>
+                <select id="patient_id" name="patient_id" class="cell-input">
+                    {% for p in patients %}
+                    <option value="{{ p.id }}"
+                            {% if report and report.patient_id == p.id %}selected{% endif %}>
+                        {{ p.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-row">
+                <label for="image">
+                    {% if edit_mode %}更换图片（留空则不修改）{% else %}上传检查单图片{% endif %}
+                </label>
+                <input id="image" name="image" type="file" class="cell-input"
+                       accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+                       {% if not edit_mode %}required{% endif %}>
+                {% if edit_mode and report %}
+                <div style="margin-top: 8px;">
+                    <img src="{{ url_for('static', filename=report.image_path) }}"
+                         style="max-height: 120px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.1);">
+                    <span style="color: var(--text-muted); font-size: 0.85rem; margin-left: 8px;">当前图片</span>
+                </div>
+                {% endif %}
+            </div>
+            <div class="form-row">
+                <label for="description">详细说明（可选）</label>
+                <textarea id="description" name="description" class="cell-input textarea-input"
+                          rows="4" placeholder="对这份检查单的补充说明……">{{ report.description if report else '' }}</textarea>
+            </div>
+            <div class="auth-form-actions">
+                <a href="{{ url_for('reports_list') }}" class="btn btn-ghost">取消</a>
+                <button type="submit" class="btn btn-primary">
+                    {% if edit_mode %}保存修改{% else %}提交报告{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

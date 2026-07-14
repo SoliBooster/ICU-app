@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}编辑解释 - {{ col_display }} - {{ site_name }}{% endblock %}
+{% block topbar_title %}<h1>编辑解释：{{ col_display }}</h1>{% endblock %}
+{% block content %}
+<section class="card">
+    <div class="card-head">
+        <div class="card-title">
+            <span class="card-icon">✏️</span>
+            编辑「{{ col_display }}」的解释
+            <span class="badge">{{ sheet_display }}</span>
+        </div>
+    </div>
+    <div class="card-body">
+        <form method="post" enctype="multipart/form-data" class="explain-form">
+            <div class="form-row">
+                <label for="content">文字解释</label>
+                <textarea id="content" name="content" class="cell-input textarea-input"
+                          rows="10" placeholder="输入关于「{{ col_display }}」的专业解释，例如：&#10;&#10;中性粒细胞是白细胞的一种，是机体抵御细菌感染的第一道防线……&#10;正常参考值范围：50%-70%&#10;&#10;数值偏高可能提示：细菌感染、炎症、应激反应等&#10;数值偏低可能提示：病毒感染、骨髓抑制等">{{ explain.content if explain else '' }}</textarea>
+                <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
+                    支持多段文字，空行分段
+                </div>
+            </div>
+
+            <div class="form-row">
+                <label>插图（可选）</label>
+                <div class="explain-upload-area">
+                    <input id="images" name="images" type="file" class="cell-input"
+                           accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" multiple>
+                    <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
+                        可同时选择多张图片，支持 png/jpg/gif/webp
+                    </div>
+                </div>
+            </div>
+
+            {% if explain and explain_images %}
+            <div class="form-row">
+                <label>已上传的图片（取消勾选则删除）</label>
+                <div class="explain-existing-images">
+                    {% for img in explain_images %}
+                    <label class="explain-image-check">
+                        <input type="checkbox" name="keep_images" value="{{ img }}" checked>
+                        <img src="{{ url_for('static', filename=img) }}" class="explain-thumb"
+                             title="取消勾选可删除此图片">
+                        <span class="explain-thumb-name">{{ img.split('/')[-1][:20] }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            <input type="hidden" name="keep_images_list" value="{{ explain_images | join(',') }}">
+            {% endif %}
+
+            <div class="auth-form-actions">
+                <a href="{{ url_for('explain_view', sheet_key=sheet_key, col_key=col_key) }}" class="btn btn-ghost">取消</a>
+                <button type="submit" class="btn btn-primary">保存解释</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

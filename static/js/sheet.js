@@ -519,6 +519,107 @@
         }
     }
 
+    // ---------- 列拖拽排序（手机桌面风格） ----------
+    var dragSrcKey = null;
+
+    function initColumnDrag() {
+        var headers = $all('th.col-draggable');
+        headers.forEach(function (th) {
+            th.addEventListener('dragstart', onDragStart);
+            th.addEventListener('dragenter', onDragEnter);
+            th.addEventListener('dragover', onDragOver);
+            th.addEventListener('dragleave', onDragLeave);
+            th.addEventListener('drop', onDrop);
+            th.addEventListener('dragend', onDragEnd);
+        });
+
+        // 阻止 th 内的输入框/按钮触发拖拽
+        headers.forEach(function (th) {
+            var inputs = th.querySelectorAll('input, button, select, textarea');
+            inputs.forEach(function (el) {
+                el.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+            });
+        });
+    }
+
+    function onDragStart(e) {
+        var th = e.target.closest('th');
+        if (!th || !th.classList.contains('col-draggable')) return;
+        dragSrcKey = th.dataset.colKey;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', dragSrcKey);
+        th.classList.add('dragging');
+    }
+
+    function onDragEnter(e) {
+        var th = e.target.closest('th');
+        if (!th || !th.classList.contains('col-draggable')) return;
+        if (th.dataset.colKey === dragSrcKey) return;
+        th.classList.add('drag-over');
+    }
+
+    function onDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    }
+
+    function onDragLeave(e) {
+        var th = e.target.closest('th');
+        if (!th) return;
+        th.classList.remove('drag-over');
+    }
+
+    function onDrop(e) {
+        e.preventDefault();
+        var targetTh = e.target.closest('th');
+        if (!targetTh || !targetTh.classList.contains('col-draggable')) return;
+
+        var srcKey = dragSrcKey;
+        var dstKey = targetTh.dataset.colKey;
+        if (!srcKey || srcKey === dstKey) return;
+
+        targetTh.classList.remove('drag-over');
+
+        // 获取当前显示顺序
+        var allThs = $all('th.col-draggable');
+        var keys = allThs.map(function (th) { return th.dataset.colKey; });
+
+        // 把 srcKey 移到 dstKey 的位置
+        var srcIdx = keys.indexOf(srcKey);
+        var dstIdx = keys.indexOf(dstKey);
+        keys.splice(srcIdx, 1);
+        keys.splice(dstIdx, 0, srcKey);
+
+        // 发送新顺序到服务器
+        var btn = $('#addColBtn');
+        if (btn) btn.disabled = true;
+
+        fetch(apiUrl('/api/columns/' + sheetKey + '/reorder'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order: keys })
+        }).then(function (r) { return r.json(); }).then(function (res) {
+            if (res.ok) {
+                showToast('列顺序已更新 ✓', 'success');
+                location.reload();
+            } else {
+                showToast(res.error || '排序失败', 'error');
+                if (btn) btn.disabled = false;
+            }
+        }).catch(function () {
+            showToast('网络错误', 'error');
+            if (btn) btn.disabled = false;
+        });
+    }
+
+    function onDragEnd(e) {
+        var th = e.target.closest('th');
+        if (th) th.classList.remove('dragging');
+        $all('th.col-draggable').forEach(function (t) { t.classList.remove('drag-over'); });
+        var btn = $('#addColBtn');
+        if (btn) btn.disabled = false;
+    }
+
     // ---------- 启动 ----------
     document.addEventListener('DOMContentLoaded', function () {
         initColChips();
@@ -530,5 +631,6 @@
         bindExport();
         bindRefRange();
         bindRefreshChart();
+        initColumnDrag();
     });
 })();

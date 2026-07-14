@@ -8,6 +8,7 @@ import math
 import numpy as np
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from sklearn.linear_model import LinearRegression
 
 from config import DB_PATH, EXCEL_PATH, PORT, SECRET_KEY
@@ -19,6 +20,20 @@ P = placeholder()
 # ================= 1. 初始化 Flask =================
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+
+# ================= 1-2. 文件上传配置 =================
+UPLOAD_FOLDER = os.path.join(app.static_folder, 'uploads')
+REPORT_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, 'reports')
+EXPLAIN_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, 'explain')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'}
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+
+os.makedirs(REPORT_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(EXPLAIN_UPLOAD_FOLDER, exist_ok=True)
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # ================= 2. 分表元数据缓存 =================
 SHEETS = {}
@@ -638,6 +653,7 @@ def api_add_column(key):
     payload = request.get_json(force=True) or {}
     col_name = str(payload.get('name', '')).strip()
     col_type = payload.get('type', 'numeric')
+    position = payload.get('position')  # 可选，插入位置（col_order 索引）
 
     if not col_name:
         return jsonify({'error': '请输入指标名称'}), 400
@@ -650,8 +666,20 @@ def api_add_column(key):
     existing_cols = info['columns']
     new_col_key = f'col_{len(existing_cols) + 1}'
 
-    max_order = max((c.get('col_order', 0) for c in existing_cols), default=0)
-    new_order = max_order + 1
+    # 计算插入位置
+    total = len(existing_cols)
+    if position is not None and 0 <= position < total:
+        new_order = position
+        # 后面列的 col_order 全部 +1
+        for c in existing_cols:
+            if c.get('col_order', 0) >= position:
+                execute(
+                    f"UPDATE _meta_columns SET col_order = col_order + 1 WHERE sheet_key={P} AND col_key={P}",
+                    (key, c['key'])
+                )
+    else:
+        max_order = max((c.get('col_order', 0) for c in existing_cols), default=0)
+        new_order = max_order + 1
 
     if use_mysql():
         sql_type = 'DOUBLE' if col_type == 'numeric' else 'VARCHAR(255)'
@@ -668,7 +696,43 @@ def api_add_column(key):
 
     load_sheets()
 
-    return jsonify({'ok': True, 'col_key': new_col_key, 'display': col_name})
+    return jsonify({'ok': True, 'col_key': new_col_key, 'display': col_name, 'position': new_order})
+
+
+# ================= 16-2. API：重新排序列（仅管理员） =================
+@app.route('/api/columns/<key>/reorder', methods=['POST'])
+@admin_required
+def api_reorder_columns(key):
+    """以整列为单位重新排序，拖拽后调用此接口"""
+    info = SHEETS.get(key)
+    if not info:
+        return jsonify({'error': 'not found'}), 404
+
+    payload = request.get_json(force=True) or {}
+    new_order = payload.get('order', [])  # 例如 ["col_3", "col_1", "col_2"]
+
+    if not new_order:
+        return jsonify({'error': '缺少 order 参数'}), 400
+
+    existing = query_all(f"SELECT col_key FROM _meta_columns WHERE sheet_key={P}", (key,))
+    existing_keys = {e['col_key'] for e in existing}
+
+    if set(new_order) != existing_keys:
+        return jsonify({'error': '列集合不匹配'}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    for idx, col_key in enumerate(new_order):
+        cur.execute(
+            f"UPDATE _meta_columns SET col_order={P} WHERE sheet_key={P} AND col_key={P}",
+            (idx, key, col_key)
+        )
+    conn.commit()
+    conn.close()
+
+    load_sheets()
+
+    return jsonify({'ok': True, 'order': new_order})
 
 
 # ================= 17. API：参考范围（仅管理员） =================
@@ -791,6 +855,271 @@ def not_found(e):
     return render_template('error.html', message='页面不存在', code=404), 404
 
 
+# ================= 21. 图片报告 =================
+@app.route('/reports')
+@login_required
+def reports_list():
+    """报告列表页"""
+    user = current_user()
+    is_admin_user = user and user['role'] == 'admin'
+
+    patient_id = session.get('patient_id') if (user and user['role'] != 'admin') else None
+
+    if patient_id:
+        rows = dictify_all(query_all(f"SELECT * FROM reports WHERE patient_id={P} ORDER BY created_at DESC", (patient_id,)))
+    else:
+        rows = dictify_all(query_all("SELECT * FROM reports ORDER BY created_at DESC"))
+
+    patients = dictify_all(query_all("SELECT id, name FROM patients ORDER BY id"))
+
+    return render_template('reports.html',
+                           reports=rows,
+                           patients=patients,
+                           is_admin=is_admin_user)
+
+
+@app.route('/reports/upload', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def report_upload():
+    """提交图片报告"""
+    patients = dictify_all(query_all("SELECT id, name FROM patients ORDER BY id"))
+
+    if request.method == 'GET':
+        return render_template('report_form.html', patients=patients, report=None, edit_mode=False)
+
+    # POST
+    title = request.form.get('title', '').strip()
+    description = request.form.get('description', '').strip()
+    patient_id = request.form.get('patient_id', 1)
+    file = request.files.get('image')
+
+    if not title:
+        flash('请填写报告标题。', 'danger')
+        return render_template('report_form.html', patients=patients, report=None, edit_mode=False)
+
+    if not file or file.filename == '':
+        flash('请选择要上传的图片。', 'danger')
+        return render_template('report_form.html', patients=patients, report=None, edit_mode=False)
+
+    if not allowed_file(file.filename):
+        flash('只支持图片格式（png/jpg/jpeg/gif/webp/bmp）。', 'danger')
+        return render_template('report_form.html', patients=patients, report=None, edit_mode=False)
+
+    filename = secure_filename(file.filename)
+    import time
+    unique_name = f"{int(time.time())}_{filename}"
+    file.save(os.path.join(REPORT_UPLOAD_FOLDER, unique_name))
+
+    image_rel = f'uploads/reports/{unique_name}'
+
+    execute(
+        f"INSERT INTO reports(patient_id, title, description, image_path) VALUES({P},{P},{P},{P})",
+        (int(patient_id), title, description, image_rel)
+    )
+
+    flash('图片报告已提交 ✓', 'success')
+    return redirect(url_for('reports_list'))
+
+
+@app.route('/reports/<int:report_id>/edit', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def report_edit(report_id):
+    """编辑图片报告"""
+    report = dictify(query_one(f"SELECT * FROM reports WHERE id={P}", (report_id,)))
+    if not report:
+        abort(404)
+
+    patients = dictify_all(query_all("SELECT id, name FROM patients ORDER BY id"))
+
+    if request.method == 'GET':
+        return render_template('report_form.html', patients=patients, report=report, edit_mode=True)
+
+    title = request.form.get('title', '').strip()
+    description = request.form.get('description', '').strip()
+    patient_id = request.form.get('patient_id', 1)
+    file = request.files.get('image')
+
+    if not title:
+        flash('请填写报告标题。', 'danger')
+        return render_template('report_form.html', patients=patients, report=report, edit_mode=True)
+
+    if file and file.filename != '':
+        if not allowed_file(file.filename):
+            flash('只支持图片格式。', 'danger')
+            return render_template('report_form.html', patients=patients, report=report, edit_mode=True)
+        filename = secure_filename(file.filename)
+        import time
+        unique_name = f"{int(time.time())}_{filename}"
+        file.save(os.path.join(REPORT_UPLOAD_FOLDER, unique_name))
+        image_rel = f'uploads/reports/{unique_name}'
+        execute(f"UPDATE reports SET image_path={P} WHERE id={P}", (image_rel, report_id))
+
+    execute(
+        f"UPDATE reports SET title={P}, description={P}, patient_id={P} WHERE id={P}",
+        (title, description, int(patient_id), report_id)
+    )
+
+    flash('报告已更新 ✓', 'success')
+    return redirect(url_for('reports_list'))
+
+
+@app.route('/reports/<int:report_id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def report_delete(report_id):
+    """删除图片报告"""
+    report = dictify(query_one(f"SELECT * FROM reports WHERE id={P}", (report_id,)))
+    if not report:
+        abort(404)
+
+    # 删除物理文件
+    file_path = os.path.join(app.static_folder, report['image_path'])
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception:
+        pass
+
+    execute(f"DELETE FROM reports WHERE id={P}", (report_id,))
+    flash('报告已删除。', 'info')
+    return redirect(url_for('reports_list'))
+
+
+# ================= 22. 指标名词解释 =================
+@app.route('/explain/<sheet_key>/<col_key>')
+@login_required
+def explain_view(sheet_key, col_key):
+    """查看指标解释"""
+    info = SHEETS.get(sheet_key)
+    if not info:
+        abort(404)
+
+    col_info = next((c for c in info['columns'] if c['key'] == col_key), None)
+    if not col_info:
+        abort(404)
+
+    explain = dictify(query_one(
+        f"SELECT * FROM indicator_explanations WHERE sheet_key={P} AND col_key={P}",
+        (sheet_key, col_key)
+    ))
+
+    user = current_user()
+    is_admin_user = user and user['role'] == 'admin'
+
+    # 解析图片列表
+    explain_images = []
+    if explain and explain.get('images'):
+        try:
+            explain_images = json.loads(explain['images'])
+        except (json.JSONDecodeError, TypeError):
+            explain_images = []
+
+    return render_template('explain.html',
+                           sheet_key=sheet_key,
+                           col_key=col_key,
+                           col_display=col_info['display'],
+                           sheet_display=info['display'],
+                           explain=explain,
+                           explain_images=explain_images,
+                           is_admin=is_admin_user)
+
+
+@app.route('/explain/<sheet_key>/<col_key>/edit', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def explain_edit(sheet_key, col_key):
+    """编辑指标解释"""
+    info = SHEETS.get(sheet_key)
+    if not info:
+        abort(404)
+
+    col_info = next((c for c in info['columns'] if c['key'] == col_key), None)
+    if not col_info:
+        abort(404)
+
+    explain = dictify(query_one(
+        f"SELECT * FROM indicator_explanations WHERE sheet_key={P} AND col_key={P}",
+        (sheet_key, col_key)
+    ))
+
+    # 解析已有图片列表
+    explain_images = []
+    if explain and explain.get('images'):
+        try:
+            explain_images = json.loads(explain['images'])
+        except (json.JSONDecodeError, TypeError):
+            explain_images = []
+
+    if request.method == 'GET':
+        return render_template('explain_edit.html',
+                               sheet_key=sheet_key,
+                               col_key=col_key,
+                               col_display=col_info['display'],
+                               sheet_display=info['display'],
+                               explain=explain,
+                               explain_images=explain_images)
+
+    # POST
+    content = request.form.get('content', '').strip()
+    images = request.files.getlist('images')
+
+    existing_images = []
+    if explain and explain.get('images'):
+        try:
+            existing_images = json.loads(explain['images'])
+        except (json.JSONDecodeError, TypeError):
+            existing_images = []
+
+    # 处理新上传的图片
+    new_images = []
+    for file in images:
+        if file and file.filename and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            import time
+            unique_name = f"{int(time.time())}_{filename}"
+            file.save(os.path.join(EXPLAIN_UPLOAD_FOLDER, unique_name))
+            new_images.append(f'uploads/explain/{unique_name}')
+
+    all_images = existing_images + new_images
+
+    # 删除标记的图片
+    keep_images_str = request.form.get('keep_images', '')
+    if keep_images_str:
+        keep_set = set()
+        for k in keep_images_str.split(','):
+            k = k.strip()
+            if k:
+                keep_set.add(k)
+        # 不在 keep_set 中的图片被删除
+        deleted = [img for img in all_images if img not in keep_set]
+        for img_path in deleted:
+            full_path = os.path.join(app.static_folder, img_path)
+            try:
+                if os.path.exists(full_path):
+                    os.remove(full_path)
+            except Exception:
+                pass
+        all_images = [img for img in all_images if img in keep_set]
+
+    images_json = json.dumps(all_images, ensure_ascii=False)
+
+    if explain:
+        execute(
+            f"UPDATE indicator_explanations SET content={P}, images={P} WHERE id={P}",
+            (content, images_json, explain['id'])
+        )
+    else:
+        execute(
+            f"INSERT INTO indicator_explanations(sheet_key, col_key, content, images) VALUES({P},{P},{P},{P})",
+            (sheet_key, col_key, content, images_json)
+        )
+
+    flash('解释已保存 ✓', 'success')
+    return redirect(url_for('explain_view', sheet_key=sheet_key, col_key=col_key))
+
+
 # ================= 18. 启动入口 =================
 if __name__ == '__main__':
     load_sheets()
@@ -799,5 +1128,78 @@ if __name__ == '__main__':
         from init_db import init_db
         init_db(force=False)
         load_sheets()
+
+    # 自动检测并创建缺失的新表（安全迁移，不影响已有数据）
+    try:
+        missing_tables = []
+        conn = get_db()
+        cur = conn.cursor()
+        if use_mysql():
+            cur.execute("SHOW TABLES LIKE 'reports'")
+            if not cur.fetchone():
+                missing_tables.append('reports')
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS reports (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        patient_id INT NOT NULL DEFAULT 1,
+                        title VARCHAR(200) NOT NULL,
+                        description TEXT,
+                        image_path VARCHAR(500) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """)
+            cur.execute("SHOW TABLES LIKE 'indicator_explanations'")
+            if not cur.fetchone():
+                missing_tables.append('indicator_explanations')
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS indicator_explanations (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        sheet_key VARCHAR(50) NOT NULL,
+                        col_key VARCHAR(50) NOT NULL,
+                        content TEXT,
+                        images TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uq_explain (sheet_key, col_key)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """)
+        else:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='reports'")
+            if not cur.fetchone():
+                missing_tables.append('reports')
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS reports (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        patient_id INTEGER NOT NULL DEFAULT 1,
+                        title TEXT NOT NULL,
+                        description TEXT,
+                        image_path TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='indicator_explanations'")
+            if not cur.fetchone():
+                missing_tables.append('indicator_explanations')
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS indicator_explanations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sheet_key TEXT NOT NULL,
+                        col_key TEXT NOT NULL,
+                        content TEXT,
+                        images TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(sheet_key, col_key)
+                    )
+                """)
+        conn.commit()
+        conn.close()
+        if missing_tables:
+            print(f"已自动创建缺失的表：{', '.join(missing_tables)}")
+    except Exception as e:
+        print(f"自动建表检查跳过（非关键）：{e}")
+
     print(f"已加载 {len(SHEETS)} 个分表")
     app.run(host='0.0.0.0', port=PORT, debug=True)

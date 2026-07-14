@@ -43,6 +43,13 @@
                     </a>
                 </li>
                 {% endif %}
+                <li>
+                    <a href="{{ url_for('reports_list') }}"
+                       class="nav-item {% if request.path.startswith('/reports') %}active{% endif %}">
+                        <span class="nav-dot" style="background: var(--info);"></span>
+                        <span class="nav-text">图片报告</span>
+                    </a>
+                </li>
                 {% if current_patient %}
                 <li>
                     <a href="{{ url_for('switch_patient') }}" class="nav-item">

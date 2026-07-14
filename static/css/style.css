@@ -17,6 +17,7 @@
     --danger: #dc2626;
     --danger-soft: #fef2f2;
     --warn: #d97706;
+    --info: #0891b2;
     --shadow: 0 1px 3px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
     --shadow-lg: 0 10px 30px rgba(16, 24, 40, .08), 0 4px 12px rgba(16, 24, 40, .04);
     --radius: 12px;
@@ -895,4 +896,216 @@ body {
 .ref-set-btn:hover {
     opacity: 1;
     background: var(--surface-2);
+}
+
+/* ===== 列拖拽排序 ===== */
+th.col-draggable {
+    cursor: grab;
+    user-select: none;
+    position: relative;
+}
+th.col-draggable:active {
+    cursor: grabbing;
+}
+th.col-draggable.dragging {
+    opacity: 0.4;
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
+}
+th.col-draggable.drag-over {
+    position: relative;
+}
+th.col-draggable.drag-over::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    border-radius: 2px;
+    box-shadow: 0 0 8px rgba(13, 148, 136, 0.5);
+}
+.drag-handle {
+    display: inline-block;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--text-3);
+    opacity: 0.4;
+    margin-right: 4px;
+    cursor: grab;
+    transition: opacity .15s;
+    letter-spacing: 2px;
+}
+th.col-draggable:hover .drag-handle {
+    opacity: 0.9;
+}
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+/* ===== 指标名可点击 ===== */
+a.th-name {
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    border-bottom: 1px dashed transparent;
+    transition: border-color .15s, color .15s;
+}
+a.th-name:hover {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+/* ===== 图片报告页 ===== */
+.report-card .card-head .card-title {
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.badge-patient {
+    background: var(--info);
+    color: #fff;
+    font-size: 0.75rem;
+    padding: 1px 8px;
+    border-radius: 10px;
+}
+.report-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.report-image-wrap {
+    text-align: center;
+    background: var(--surface-1);
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid var(--border);
+}
+.report-image {
+    max-width: 100%;
+    max-height: 500px;
+    object-fit: contain;
+    border-radius: 4px;
+    cursor: zoom-in;
+    transition: opacity .15s;
+}
+.report-image:hover {
+    opacity: 0.9;
+}
+.report-desc {
+    background: var(--surface-1);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    border-radius: 0 6px 6px 0;
+}
+.report-desc-label {
+    font-weight: 600;
+    color: var(--text-2);
+    margin-bottom: 4px;
+    font-size: 0.9rem;
+}
+.report-desc-text {
+    color: var(--text-1);
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+.card-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+.report-form {
+    max-width: 640px;
+}
+
+/* ===== 解释页 ===== */
+.explain-body {
+    min-height: 200px;
+}
+.empty-explain {
+    text-align: center;
+    padding: 2rem 1rem;
+}
+.explain-content {
+    font-size: 1rem;
+    line-height: 1.8;
+    color: var(--text-1);
+    padding: 0 0 16px 0;
+    white-space: pre-wrap;
+}
+.explain-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+.explain-image-item {
+    flex: 0 0 auto;
+}
+.explain-image {
+    max-height: 240px;
+    max-width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    cursor: zoom-in;
+    transition: transform .15s, box-shadow .15s;
+}
+.explain-image:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+.explain-back {
+    margin-top: 16px;
+}
+.explain-form {
+    max-width: 720px;
+}
+.explain-upload-area {
+    display: flex;
+    flex-direction: column;
+}
+.explain-existing-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 4px;
+}
+.explain-image-check {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    transition: border-color .15s;
+}
+.explain-image-check:has(input:checked) {
+    border-color: var(--accent);
+}
+.explain-image-check:has(input:not(:checked)) {
+    opacity: 0.5;
+    border-color: var(--danger);
+}
+.explain-thumb {
+    height: 60px;
+    width: auto;
+    border-radius: 4px;
+}
+.explain-thumb-name {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.textarea-input {
+    resize: vertical;
+    font-family: inherit;
+    min-height: 100px;
+    line-height: 1.6;
 }

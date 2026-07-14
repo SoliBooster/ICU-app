@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}图片报告 - {{ site_name }}{% endblock %}
+{% block topbar_title %}<h1>图片报告</h1>{% endblock %}
+
+{% block topbar_actions %}
+{% if is_admin %}
+<a href="{{ url_for('report_upload') }}" class="btn btn-primary">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    <span class="btn-text">提交报告</span>
+</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if reports|length == 0 %}
+<section class="card">
+    <div class="card-body" style="text-align: center; padding: 3rem 1rem;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">📋</div>
+        <p style="color: var(--text-muted); font-size: 1.1rem;">暂无图片报告</p>
+        {% if is_admin %}
+        <p style="color: var(--text-muted); margin-top: 0.5rem;">
+            <a href="{{ url_for('report_upload') }}" style="color: var(--accent);">提交第一份报告</a>
+        </p>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
+{% for r in reports %}
+<section class="card report-card">
+    <div class="card-head">
+        <div class="card-title">
+            <span class="card-icon">📄</span>
+            {{ r.title }}
+            <span class="badge">{{ r.created_at }}</span>
+            {% if r.patient_id %}
+            {% set pname = namespace(name='') %}
+            {% for p in patients %}
+                {% if p.id == r.patient_id %}{% set pname.name = p.name %}{% endif %}
+            {% endfor %}
+            <span class="badge badge-patient">{{ pname.name }}</span>
+            {% endif %}
+        </div>
+        {% if is_admin %}
+        <div class="card-actions">
+            <a href="{{ url_for('report_edit', report_id=r.id) }}" class="btn btn-ghost btn-sm">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                编辑
+            </a>
+            <form method="post" action="{{ url_for('report_delete', report_id=r.id) }}"
+                  onsubmit="return confirm('确定删除「{{ r.title }}」吗？');" style="display:inline;">
+                <button type="submit" class="btn btn-ghost btn-sm" style="color: var(--danger);">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                    删除
+                </button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+    <div class="card-body report-body">
+        <div class="report-image-wrap">
+            <a href="{{ url_for('static', filename=r.image_path) }}" target="_blank">
+                <img src="{{ url_for('static', filename=r.image_path) }}" alt="{{ r.title }}" class="report-image">
+            </a>
+        </div>
+        {% if r.description %}
+        <div class="report-desc">
+            <div class="report-desc-label">📝 说明：</div>
+            <div class="report-desc-text">{{ r.description }}</div>
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endfor %}
+{% endblock %}
