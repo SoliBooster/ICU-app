@@ -33,7 +33,7 @@
 <input type="hidden" id="sheetKey" value="{{ current_key }}">
 <input type="hidden" id="chartData" value='{{ chart_data_json }}'>
 <input type="hidden" id="refRanges" value='{{ ref_ranges | tojson }}'>
-<input type="hidden" id="briefPatientId" value="{{ current_patient.id if current_patient else '' }}">
+<input type="hidden" id="briefPatientId" value="{{ brief_patient_id }}">
 
 <!-- 今日简报 -->
 <section class="card brief-card" id="briefCard">
@@ -41,7 +41,7 @@
         <div class="card-title">
             <span class="card-icon">📋</span>
             <span>今日简报</span>
-            <span class="badge" id="briefDate"></span>
+            <span class="badge" id="briefDate">{{ brief_updated[:10] if brief_updated else today }}</span>
         </div>
         {% if is_admin %}
         <button class="btn btn-ghost btn-sm" id="briefEditBtn">
@@ -52,12 +52,16 @@
     </div>
     <div class="card-body brief-body" id="briefBody">
         <div class="brief-content" id="briefContent">
+            {% if brief_content %}
+            {{ brief_content | replace('\n', '<br>') | safe }}
+            {% else %}
             <p class="brief-placeholder">暂无简报，管理员可点击编辑添加</p>
+            {% endif %}
         </div>
         <div class="brief-edit-wrap" id="briefEditWrap" style="display:none;">
             <textarea id="briefTextarea" class="cell-input textarea-input"
                       placeholder="输入今日病情简报，例如：&#10;&#10;• 患者目前意识清楚，生命体征平稳&#10;• 血常规示白细胞计数较前下降，提示感染控制良好&#10;• 明日计划：复查血气分析，评估呼吸功能"
-                      rows="6"></textarea>
+                      rows="6">{{ brief_content }}</textarea>
             <div class="brief-edit-actions">
                 <button class="btn btn-ghost" id="briefCancelBtn">取消</button>
                 <button class="btn btn-primary" id="briefSaveBtn">保存简报</button>

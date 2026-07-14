@@ -620,59 +620,22 @@
         if (btn) btn.disabled = false;
     }
 
-    // ---------- 今日简报 ----------
+    // ---------- 今日简报（服务端渲染，JS仅处理编辑） ----------
     function initBrief() {
-        var briefCard = $('#briefCard');
-        if (!briefCard) return;
+        var editBtn = $('#briefEditBtn');
+        if (!editBtn) return;
 
         var patientId = $('#briefPatientId').value;
-        if (!patientId) {
-            briefCard.style.display = 'none';
-            return;
-        }
-
         var contentEl = $('#briefContent');
         var editWrap = $('#briefEditWrap');
         var textarea = $('#briefTextarea');
-        var editBtn = $('#briefEditBtn');
         var saveBtn = $('#briefSaveBtn');
         var cancelBtn = $('#briefCancelBtn');
-        var dateEl = $('#briefDate');
 
-        // 显示今天的日期
-        var today = new Date();
-        dateEl.textContent = today.getFullYear() + '-' +
-            String(today.getMonth() + 1).padStart(2, '0') + '-' +
-            String(today.getDate()).padStart(2, '0');
-
-        // 加载简报
-        function loadBrief() {
-            fetch(apiUrl('/api/brief/' + patientId))
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    if (data.content) {
-                        contentEl.innerHTML = data.content.replace(/\n/g, '<br>');
-                    } else {
-                        contentEl.innerHTML = '<p class="brief-placeholder">暂无简报，管理员可点击编辑添加</p>';
-                    }
-                })
-                .catch(function () { /* ignore */ });
-        }
-
-        loadBrief();
-
-        if (!editBtn) return;
-
-        // 编辑模式
         editBtn.addEventListener('click', function () {
-            var currentText = contentEl.textContent;
-            if (currentText === '暂无简报，管理员可点击编辑添加' || currentText === '') {
-                textarea.value = '';
-            } else {
-                // 把 <br> 转回 \n
-                var html = contentEl.innerHTML;
-                textarea.value = html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
-            }
+            // 从当前显示内容取文本（去掉<br>就是纯文本）
+            textarea.value = contentEl.textContent.trim() === '暂无简报，管理员可点击编辑添加'
+                ? '' : contentEl.textContent.trim();
             contentEl.style.display = 'none';
             editBtn.style.display = 'none';
             editWrap.style.display = 'block';
@@ -699,8 +662,8 @@
             }).then(function (r) { return r.json(); }).then(function (res) {
                 if (res.ok) {
                     showToast('简报已保存 ✓', 'success');
-                    loadBrief();
-                    cancelEdit();
+                    // 保存成功后刷新页面，让服务端重新渲染
+                    location.reload();
                 } else {
                     showToast(res.error || '保存失败', 'error');
                 }

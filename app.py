@@ -223,6 +223,8 @@ def patient_selected_required(f):
 
 
 # ================= 5. 上下文处理器 =================
+import datetime
+
 @app.context_processor
 def inject_globals():
     user = current_user()
@@ -233,6 +235,7 @@ def inject_globals():
         'current_user': user,
         'is_admin': user and user['role'] == 'admin',
         'current_patient': patient,
+        'today': datetime.date.today().isoformat(),
     }
 
 
@@ -376,6 +379,14 @@ def sheet_view(key):
 
     ref_ranges = get_ref_ranges(key)
 
+    # 获取今日简报（当前病人的）
+    brief_patient_id = session.get('patient_id') if (user and user['role'] != 'admin') else 1
+    brief = dictify(query_one(
+        f"SELECT content, updated_at FROM daily_briefs WHERE patient_id={P}", (brief_patient_id,)
+    ))
+    brief_content = brief['content'] if brief else ''
+    brief_updated = str(brief['updated_at']) if brief else ''
+
     return render_template('sheet.html',
                            current_key=key,
                            sheet=info,
@@ -383,7 +394,10 @@ def sheet_view(key):
                            columns=columns,
                            chart_data_json=json.dumps(chart_data, ensure_ascii=False, default=str),
                            is_admin=user and user['role'] == 'admin',
-                           ref_ranges=ref_ranges)
+                           ref_ranges=ref_ranges,
+                           brief_content=brief_content,
+                           brief_updated=brief_updated,
+                           brief_patient_id=brief_patient_id)
 
 
 # ================= 9. API：获取数据 =================
