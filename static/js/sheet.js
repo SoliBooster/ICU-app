@@ -1,9 +1,12 @@
-// 分表页：图表渲染 + 数据增删改查
+// 分表页：图表渲染 + 数据增删改查 + 参考范围
 (function () {
     var sheetKey = document.getElementById('sheetKey').value;
     var raw = document.getElementById('chartData').value;
+    var refRaw = document.getElementById('refRanges').value;
     var DATA = {};
+    var REFS = {};
     try { DATA = JSON.parse(raw); } catch (e) { console.error('chart data parse error', e); }
+    try { REFS = JSON.parse(refRaw); } catch (e) { /* no refs */ }
 
     var PALETTE = [
         '#0d9488', '#ea580c', '#7c3aed', '#db2777', '#2563eb',
@@ -12,7 +15,6 @@
         '#9333ea', '#dc2626', '#0d9488', '#92400e', '#1d4ed8'
     ];
 
-    // ---------- 工具 ----------
     function $(s, p) { return (p || document).querySelector(s); }
     function $all(s, p) { return Array.prototype.slice.call((p || document).querySelectorAll(s)); }
     function showToast(msg, type) {
@@ -30,11 +32,16 @@
     }
     function colorFor(i) { return PALETTE[i % PALETTE.length]; }
 
-    // ---------- 状态 ----------
-    var selectedCols = [];    // 折线图选中的指标
-    var predictCol = null;    // 预测图指标
-    var lineCharts = [];      // 存储所有折线图实例
+    var selectedCols = [];
+    var predictCol = null;
+    var lineCharts = [];
     var predictChart = null;
+
+    // ---------- 参考范围辅助 ----------
+    function getRef(key) { return REFS[key] || {}; }
+    function getRefMin(key) { var r = getRef(key); return r.ref_min !== undefined && r.ref_min !== null ? r.ref_min : null; }
+    function getRefMax(key) { var r = getRef(key); return r.ref_max !== undefined && r.ref_max !== null ? r.ref_max : null; }
+    function hasRef(key) { return getRefMin(key) !== null || getRefMax(key) !== null; }
 
     // ---------- 初始化指标选择 ----------
     function initColChips() {
@@ -55,7 +62,6 @@
             chip.addEventListener('click', function () { toggleCol(c.key); });
             box.appendChild(chip);
         });
-        // 默认选中前 3 个
         selectedCols = (DATA.columns || []).slice(0, 3).map(function (c) { return c.key; });
         syncChips();
     }
@@ -69,17 +75,46 @@
         var i = selectedCols.indexOf(key);
         if (i >= 0) selectedCols.splice(i, 1);
         else selectedCols.push(key);
-        if (selectedCols.length > 6) selectedCols.shift(); // 最多6个
+        if (selectedCols.length > 6) selectedCols.shift();
         syncChips();
         renderLineChart();
     }
 
-    // ---------- 折线图（每个指标独立一块，各用各自y轴） ----------
+    // ---------- 合并参考范围区域到 Chart.js 配置 ----------
+    function makeRefZonePlugin(refMin, refMax, chartColor) {
+        if (refMin === null && refMax === null) return null;
+        var yMin = refMin !== null ? refMin : -Infinity;
+        var yMax = refMax !== null ? refMax : Infinity;
+        return {
+            id: 'refZone_' + Math.random(),
+            beforeDraw: function (chart) {
+                var yScale = chart.scales.y;
+                var xScale = chart.scales.x;
+                var ctx = chart.ctx;
+                if (!yScale || !xScale) return;
+
+                var pixelMin = (refMin !== null) ? yScale.getPixelForValue(refMin) : xScale.top;
+                var pixelMax = (refMax !== null) ? yScale.getPixelForValue(refMax) : yScale.bottom;
+                if (refMin === null) pixelMin = xScale.top;
+                if (refMax === null) pixelMax = yScale.bottom;
+
+                var top = Math.min(pixelMin, pixelMax);
+                var height = Math.abs(pixelMax - pixelMin);
+                if (height < 1) return;
+
+                ctx.save();
+                ctx.fillStyle = 'rgba(13, 148, 136, 0.08)';
+                ctx.fillRect(xScale.left, top, xScale.right - xScale.left, height);
+                ctx.restore();
+            }
+        };
+    }
+
+    // ---------- 折线图 ----------
     function renderLineChart() {
         var container = $('#lineChartContainer');
         if (!container) return;
 
-        // 销毁旧图
         lineCharts.forEach(function (c) { if (c) c.destroy(); });
         lineCharts = [];
         container.innerHTML = '';
@@ -96,7 +131,6 @@
             var colName = (DATA.columns[colIdx] || {}).display || key;
             var chartColor = colorFor(colIdx);
 
-            // ---- 图表卡片 ----
             var card = document.createElement('div');
             card.className = 'mini-chart-card';
 
@@ -114,17 +148,25 @@
 
             container.appendChild(card);
 
-            // ---- 渲染 Chart ----
             var data = (DATA.rows || []).map(function (r) { return num(r[key]); });
-
-            // 过滤出有效值算 y 轴范围
             var valid = data.filter(function (v) { return v !== null; });
             var dataMin = valid.length ? Math.min.apply(null, valid) : 0;
             var dataMax = valid.length ? Math.max.apply(null, valid) : 1;
             var range = dataMax - dataMin || 1;
-            var pad = range * 0.15; // 上下留 15% 空白，避免线贴边
-            var yMin = Math.max(0, dataMin - pad);  // 不超过0
+            var pad = range * 0.15;
+            var yMin = Math.max(0, dataMin - pad);
             var yMax = dataMax + pad;
+
+            // 参考范围影响 y 轴范围
+            var rr = REFS[key] || {};
+            if (rr.ref_min !== null && rr.ref_min !== undefined && rr.ref_min < yMin) yMin = rr.ref_min - pad;
+            if (rr.ref_max !== null && rr.ref_max !== undefined && rr.ref_max > yMax) yMax = rr.ref_max + pad;
+
+            var plugins = [];
+            if (hasRef(key)) {
+                var plugin = makeRefZonePlugin(getRefMin(key), getRefMax(key), chartColor);
+                if (plugin) plugins.push(plugin);
+            }
 
             var chart = new Chart(canvas, {
                 type: 'line',
@@ -134,14 +176,14 @@
                         label: colName,
                         data: data,
                         borderColor: chartColor,
-                        backgroundColor: chartColor + '22',
+                        backgroundColor: 'transparent',
                         tension: 0.32,
                         borderWidth: 2.5,
                         pointRadius: 4.5,
                         pointHoverRadius: 7,
                         pointBackgroundColor: chartColor,
                         spanGaps: true,
-                        fill: true,
+                        fill: false,
                     }]
                 },
                 options: {
@@ -152,24 +194,25 @@
                         tooltip: {
                             callbacks: {
                                 label: function (c) {
-                                    return c.parsed.y === null ? colName + '：—' : colName + '：' + c.parsed.y;
+                                    var txt = c.parsed.y === null ? colName + '：—' : colName + '：' + c.parsed.y;
+                                    var rr2 = REFS[key] || {};
+                                    if (rr2.ref_min !== null && rr2.ref_min !== undefined) txt += ' (下限' + rr2.ref_min + ')';
+                                    if (rr2.ref_max !== null && rr2.ref_max !== undefined) txt += ' (上限' + rr2.ref_max + ')';
+                                    return txt;
                                 }
                             }
                         }
                     },
                     scales: {
-                        x: {
-                            grid: { display: false },
-                            ticks: { font: { size: 11 }, maxRotation: 45 }
-                        },
+                        x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 45 } },
                         y: {
-                            min: yMin,
-                            max: yMax,
+                            min: yMin, max: yMax,
                             grid: { color: '#eef1f4' },
                             ticks: { font: { size: 11 } }
                         }
                     }
-                }
+                },
+                plugins: plugins
             });
             lineCharts.push(chart);
         });
@@ -218,47 +261,30 @@
         var allLabels = histLabels.concat(futureLabels);
         var histData = p.history.concat(futureLabels.map(function () { return null; }));
         var predData = histLabels.map(function () { return null; }).concat(p.predicted);
-        // 连接点：在历史最后一点也画上预测起点
         if (histLabels.length > 0) {
             predData[histLabels.length - 1] = p.history[histLabels.length - 1];
         }
         var idx = (DATA.columns || []).findIndex(function (c) { return c.key === predictCol; });
         var col = colorFor(idx);
+
+        var plugins = [];
+        if (predictCol && hasRef(predictCol)) {
+            var plugin = makeRefZonePlugin(getRefMin(predictCol), getRefMax(predictCol), col);
+            if (plugin) plugins.push(plugin);
+        }
+
         if (predictChart) predictChart.destroy();
         predictChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: allLabels,
                 datasets: [
-                    {
-                        label: '历史数据',
-                        data: histData,
-                        borderColor: col,
-                        backgroundColor: col + '22',
-                        tension: 0.3,
-                        borderWidth: 2.5,
-                        pointRadius: 5,
-                        spanGaps: true,
-                        fill: true,
-                    },
-                    {
-                        label: '预测趋势',
-                        data: predData,
-                        borderColor: '#ea580c',
-                        backgroundColor: 'transparent',
-                        borderDash: [6, 5],
-                        tension: 0.3,
-                        borderWidth: 2.5,
-                        pointRadius: 5,
-                        pointStyle: 'rectRot',
-                        spanGaps: true,
-                        fill: false,
-                    }
+                    { label: '历史数据', data: histData, borderColor: col, backgroundColor: 'transparent', tension: 0.3, borderWidth: 2.5, pointRadius: 5, spanGaps: true, fill: false },
+                    { label: '预测趋势', data: predData, borderColor: '#ea580c', backgroundColor: 'transparent', borderDash: [6, 5], tension: 0.3, borderWidth: 2.5, pointRadius: 5, pointStyle: 'rectRot', spanGaps: true, fill: false }
                 ]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
+                responsive: true, maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
                     legend: { position: 'top', align: 'start', labels: { boxWidth: 12, usePointStyle: true, font: { size: 12 } } },
@@ -268,7 +294,8 @@
                     x: { grid: { display: false } },
                     y: { grid: { color: '#eef1f4' }, ticks: { font: { size: 11 } } }
                 }
-            }
+            },
+            plugins: plugins
         });
     }
 
@@ -291,22 +318,17 @@
                     if (row) row[field] = res.value;
                     softRefreshCharts();
                 }
-            } else {
-                showToast('保存失败', 'error');
-            }
+            } else { showToast('保存失败', 'error'); }
         }).catch(function () { showToast('网络错误', 'error'); });
     }
 
-    function softRefreshCharts() {
-        renderLineChart();
-    }
-
     function bindInlineEdit() {
-        $all('.cell-input').forEach(function (input) {
-            input.addEventListener('change', function () { saveCell(input); });
-            input.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') { input.blur(); }
-            });
+        $all('.num-input, .label-input').forEach(function (input) {
+            var timer;
+            function save() { clearTimeout(timer); timer = setTimeout(function () { saveCell(input); }, 400); }
+            input.addEventListener('change', save);
+            input.addEventListener('blur', save);
+            input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { clearTimeout(timer); saveCell(input); input.blur(); } });
         });
         $all('.del-row').forEach(function (btn) {
             btn.addEventListener('click', function () {
@@ -323,12 +345,14 @@
                             softRefreshCharts();
                             refreshPredictions();
                             showToast('已删除', 'success');
-                        } else {
-                            showToast('删除失败', 'error');
-                        }
+                        } else { showToast('删除失败', 'error'); }
                     }).catch(function () { showToast('网络错误', 'error'); });
             });
         });
+    }
+
+    function softRefreshCharts() {
+        renderLineChart();
     }
 
     function refreshPredictions() {
@@ -360,20 +384,14 @@
         modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
         saveBtn.addEventListener('click', function () {
             var payload = { row_label: $('#newRowLabel').value };
-            $all('.new-col-input').forEach(function (i) {
-                payload[i.dataset.field] = i.value;
-            });
+            $all('.new-col-input').forEach(function (i) { payload[i.dataset.field] = i.value; });
             fetch(apiUrl('/api/data/' + sheetKey + '/row'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             }).then(function (r) { return r.json(); }).then(function (res) {
-                if (res.ok) {
-                    showToast('已新增记录', 'success');
-                    location.reload();
-                } else {
-                    showToast('保存失败', 'error');
-                }
+                if (res.ok) { showToast('已新增记录', 'success'); location.reload(); }
+                else { showToast('保存失败', 'error'); }
             }).catch(function () { showToast('网络错误', 'error'); });
         });
     }
@@ -392,6 +410,115 @@
         });
     }
 
+    // ---------- 添加指标 ----------
+    function bindAddCol() {
+        var modal = $('#addColModal');
+        var openBtn = $('#addColBtn');
+        if (!openBtn) return;
+        var closeBtn = $('#addColCloseBtn');
+        var cancelBtn = $('#addColCancelBtn');
+        var saveBtn = $('#addColSaveBtn');
+
+        function open() {
+            $('#newColName').value = '';
+            $('#newColType').value = 'numeric';
+            modal.classList.add('show');
+            setTimeout(function () { $('#newColName').focus(); }, 50);
+        }
+        function close() { modal.classList.remove('show'); }
+        openBtn.addEventListener('click', open);
+        closeBtn.addEventListener('click', close);
+        cancelBtn.addEventListener('click', close);
+        modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+        saveBtn.addEventListener('click', function () {
+            var name = $('#newColName').value.trim();
+            var colType = $('#newColType').value;
+            if (!name) { showToast('请输入指标名称', 'error'); return; }
+            saveBtn.disabled = true;
+            saveBtn.textContent = '添加中…';
+            fetch(apiUrl('/api/columns/' + sheetKey + '/add'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, type: colType })
+            }).then(function (r) { return r.json(); }).then(function (res) {
+                if (res.ok) { showToast('指标 "' + name + '" 已添加', 'success'); location.reload(); }
+                else { showToast(res.error || '添加失败', 'error'); saveBtn.disabled = false; saveBtn.textContent = '添加'; }
+            }).catch(function () { showToast('网络错误', 'error'); saveBtn.disabled = false; saveBtn.textContent = '添加'; });
+        });
+    }
+
+    // ---------- 导出 CSV ----------
+    function bindExport() {
+        var btn = $('#exportBtn');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+            window.location.href = apiUrl('/api/export/' + sheetKey);
+        });
+    }
+
+    // ---------- 参考范围设置 ----------
+    function bindRefRange() {
+        var modal = $('#refModal');
+        var closeBtn = $('#refCloseBtn');
+        var cancelBtn = $('#refCancelBtn');
+        var clearBtn = $('#refClearBtn');
+        var saveBtn = $('#refSaveBtn');
+
+        if (!modal) return;
+
+        var currentCol = null;
+
+        // 绑定所有参考范围设置按钮
+        $all('.ref-set-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                currentCol = {
+                    key: btn.dataset.col,
+                    display: btn.dataset.display,
+                    min: btn.dataset.min,
+                    max: btn.dataset.max,
+                };
+                $('#refColDisplay').textContent = '设置 "' + currentCol.display + '" 的参考范围';
+                $('#refColKey').value = currentCol.key;
+                $('#refMinInput').value = currentCol.min || '';
+                $('#refMaxInput').value = currentCol.max || '';
+                modal.classList.add('show');
+                setTimeout(function () { $('#refMinInput').focus(); }, 50);
+            });
+        });
+
+        function close() { modal.classList.remove('show'); currentCol = null; }
+        closeBtn.addEventListener('click', close);
+        cancelBtn.addEventListener('click', close);
+        modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+
+        clearBtn.addEventListener('click', function () {
+            if (!currentCol) return;
+            // 发送空值清除参考范围
+            saveRef(null, null);
+        });
+
+        saveBtn.addEventListener('click', function () {
+            if (!currentCol) return;
+            var min = $('#refMinInput').value.trim();
+            var max = $('#refMaxInput').value.trim();
+            saveRef(min || null, max || null);
+        });
+
+        function saveRef(min, max) {
+            if (!currentCol) return;
+            fetch(apiUrl('/api/refs/' + sheetKey), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ col_key: currentCol.key, ref_min: min, ref_max: max })
+            }).then(function (r) { return r.json(); }).then(function (res) {
+                if (res.ok) {
+                    showToast('参考范围已保存', 'success');
+                    location.reload();
+                } else { showToast(res.error || '保存失败', 'error'); }
+            }).catch(function () { showToast('网络错误', 'error'); });
+        }
+    }
+
     // ---------- 启动 ----------
     document.addEventListener('DOMContentLoaded', function () {
         initColChips();
@@ -399,6 +526,9 @@
         initPredictSelect();
         bindInlineEdit();
         bindAddRow();
+        bindAddCol();
+        bindExport();
+        bindRefRange();
         bindRefreshChart();
     });
 })();

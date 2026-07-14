@@ -255,6 +255,31 @@ def init_db(force=False):
         )
         print('已创建默认患者：杜桂琴（查看密码：123456）')
 
+    # 9. 创建参考范围表
+    if use_mysql():
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS indicator_refs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                sheet_key VARCHAR(50) NOT NULL,
+                col_key VARCHAR(50) NOT NULL,
+                ref_min DOUBLE,
+                ref_max DOUBLE,
+                UNIQUE KEY uq_ref (sheet_key, col_key)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+    else:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS indicator_refs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sheet_key TEXT NOT NULL,
+                col_key TEXT NOT NULL,
+                ref_min REAL,
+                ref_max REAL,
+                UNIQUE(sheet_key, col_key)
+            )
+        """)
+    print('已创建参考范围表')
+
     conn.commit()
     conn.close()
     wb.close()

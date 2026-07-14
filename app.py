@@ -1,4 +1,4 @@
-# ================= ICU 数据管理平台 =================
+# ================= 数据管理平台 =================
 # 架构风格参考 farm-mall：一个 py 文件到底，清晰分段
 # 功能：8 个分表 CRUD + 折线图 + 线性回归预测
 import os
@@ -21,11 +21,6 @@ app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
 # ================= 2. 分表元数据缓存 =================
-# SHEETS[sheet_key] = {
-#   'display': '血常规', 'key': 's_1', 'table_name': 't_xxx',
-#   'columns': [{'key': 'col_1', 'display': 'WBC'}, ...],
-#   'order': 0
-# }
 SHEETS = {}
 
 
@@ -40,7 +35,6 @@ def load_sheets():
             f"SELECT col_key, col_display, col_order FROM _meta_columns WHERE sheet_key={P} ORDER BY col_order",
             (key,)
         ))
-        # 找出真实的 SQL 表名
         tname = None
         conn = get_db()
         cur = conn.cursor()
@@ -67,7 +61,6 @@ def load_sheets():
 # ================= 3. 数据工具函数 =================
 
 def parse_float(v):
-    """把值转为 float，无法解析返回 None"""
     if v is None:
         return None
     if isinstance(v, (int, float)):
@@ -85,7 +78,6 @@ def parse_float(v):
 
 
 def get_rows(sheet_key, patient_id=None):
-    """获取某个分表的数据行，可选按患者筛选"""
     info = SHEETS.get(sheet_key)
     if not info:
         return []
@@ -95,12 +87,10 @@ def get_rows(sheet_key, patient_id=None):
 
 
 def compute_predictions(rows, columns, n_future=3):
-    """对每个数值列做线性回归预测"""
     n = len(rows)
     result = {}
     if n < 2:
         return result
-
     for col in columns:
         ck = col['key']
         ys = []
@@ -134,10 +124,8 @@ def compute_predictions(rows, columns, n_future=3):
 
 
 def future_labels(labels, n):
-    """生成未来 N 个点的标签"""
     if not labels:
         return [f'预测+{i + 1}' for i in range(n)]
-    # 尝试日期型 '7月10号'
     m = re.match(r'^(\d+)月(\d+)号?$', str(labels[-1]))
     if m:
         month, day = int(m.group(1)), int(m.group(2))
@@ -154,7 +142,6 @@ def future_labels(labels, n):
                     mon = 1
             out.append(f'{mon}月{d}号')
         return out
-    # 纯数字 ID
     try:
         last = int(float(labels[-1]))
         return [str(last + i + 1) for i in range(n)]
@@ -165,7 +152,6 @@ def future_labels(labels, n):
 # ================= 4. 用户认证工具 =================
 
 def current_user():
-    """获取当前登录用户"""
     uid = session.get('user_id')
     if not uid:
         return None
@@ -173,7 +159,6 @@ def current_user():
 
 
 def login_required(f):
-    """登录验证装饰器"""
     from functools import wraps
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -185,7 +170,6 @@ def login_required(f):
 
 
 def admin_required(f):
-    """管理员验证装饰器"""
     from functools import wraps
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -198,7 +182,6 @@ def admin_required(f):
 
 
 def get_current_patient():
-    """获取当前选中病人"""
     pid = session.get('patient_id')
     if not pid:
         return None
@@ -207,7 +190,6 @@ def get_current_patient():
 
 
 def patient_selected_required(f):
-    """病人选择验证装饰器（普通用户必须选病人）"""
     from functools import wraps
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -228,12 +210,11 @@ def patient_selected_required(f):
 # ================= 5. 上下文处理器 =================
 @app.context_processor
 def inject_globals():
-    """全局注入变量到所有模板"""
     user = current_user()
     patient = get_current_patient()
     return {
         'sheets': SHEETS,
-        'site_name': 'ICU 检验数据平台',
+        'site_name': '安康·检验守护',
         'current_user': user,
         'is_admin': user and user['role'] == 'admin',
         'current_patient': patient,
@@ -271,7 +252,6 @@ def register():
     password = request.form.get('password', '')
     confirm = request.form.get('confirm', '')
 
-    # 校验
     if len(username) < 2 or len(username) > 20:
         flash('用户名长度2-20位。', 'danger')
         return render_template('register.html')
@@ -305,7 +285,6 @@ def logout():
 @app.route('/select_patient', methods=['GET', 'POST'])
 @login_required
 def select_patient():
-    """普通用户选择病人并输入查看密码"""
     user = current_user()
     if user and user['role'] == 'admin':
         return redirect(url_for('index'))
@@ -339,7 +318,6 @@ def select_patient():
 @app.route('/switch_patient')
 @login_required
 def switch_patient():
-    """切换病人（清除当前病人选择）"""
     session.pop('patient_id', None)
     return redirect(url_for('select_patient'))
 
@@ -349,7 +327,6 @@ def switch_patient():
 @login_required
 def index():
     user = current_user()
-    # 普通用户必须选择病人
     if user and user['role'] != 'admin' and not session.get('patient_id'):
         return redirect(url_for('select_patient'))
     if not SHEETS:
@@ -382,13 +359,16 @@ def sheet_view(key):
         'predictions': predictions,
     }
 
+    ref_ranges = get_ref_ranges(key)
+
     return render_template('sheet.html',
                            current_key=key,
                            sheet=info,
                            rows=rows,
                            columns=columns,
                            chart_data_json=json.dumps(chart_data, ensure_ascii=False, default=str),
-                           is_admin=user and user['role'] == 'admin')
+                           is_admin=user and user['role'] == 'admin',
+                           ref_ranges=ref_ranges)
 
 
 # ================= 9. API：获取数据 =================
@@ -427,7 +407,6 @@ def api_add_row(key):
         col_vals.append(parse_float(v) if v not in (None, '') else None)
         placeholders.append(P)
 
-    # 管理员添加记录时自动关联到当前病人（如果有选）
     patient_id = session.get('patient_id')
     if patient_id:
         col_names.append('patient_id')
@@ -502,7 +481,6 @@ def api_predict(key):
 @app.route('/admin/patients', methods=['GET', 'POST'])
 @admin_required
 def admin_patients():
-    """管理员管理病人"""
     if request.method == 'POST':
         action = request.form.get('action', '')
         patient_id = request.form.get('patient_id', '')
@@ -545,7 +523,6 @@ def admin_patients():
         elif action == 'delete' and patient_id:
             execute(f"DELETE FROM patients WHERE id={P}", (patient_id,))
             flash('病人已删除。', 'success')
-            # 如果当前选中的是这个病人，清除选择
             if session.get('patient_id') == int(patient_id):
                 session.pop('patient_id', None)
 
@@ -555,17 +532,268 @@ def admin_patients():
     return render_template('admin_patients.html', patients=patients)
 
 
-# ================= 14. 错误处理 =================
+# ================= 15. 搜索 =================
+@app.route('/search')
+@login_required
+@patient_selected_required
+def search():
+    """搜索检验数据"""
+    q = request.args.get('q', '').strip()
+    if not q:
+        return render_template('search.html', q=q, results=[])
+
+    user = current_user()
+    patient_id = session.get('patient_id') if (user and user['role'] != 'admin') else None
+    results = []
+
+    # 1. 搜索指标名称（列名）
+    col_matches = query_all(
+        f"SELECT sheet_key, sheet_display, col_key, col_display, sheet_order FROM _meta_columns WHERE col_display LIKE {P} ORDER BY sheet_order, col_order",
+        (f'%{q}%',)
+    )
+
+    # 2. 搜索日期/编号
+    row_matches = []  # (sheet_key, sheet_display, row) 元组
+    for sk, info in SHEETS.items():
+        tname = info['table_name']
+        try:
+            if patient_id:
+                rows = dictify_all(query_all(
+                    f"SELECT * FROM {tname} WHERE patient_id={P} AND row_label LIKE {P} ORDER BY id",
+                    (patient_id, f'%{q}%')
+                ))
+            else:
+                rows = dictify_all(query_all(
+                    f"SELECT * FROM {tname} WHERE row_label LIKE {P} ORDER BY id",
+                    (f'%{q}%',)
+                ))
+            for r in rows:
+                row_matches.append((sk, info['display'], info['table_name'], r))
+        except Exception:
+            pass
+
+    # 整理指标搜索结果：按分表分组，每组包含匹配的列 + 数据
+    for sk in sorted(set(m['sheet_key'] for m in col_matches)):
+        matched = [m for m in col_matches if m['sheet_key'] == sk]
+        info = SHEETS.get(sk)
+        if not info:
+            continue
+        tname = info['table_name']
+        # 获取该分表的所有行
+        try:
+            if patient_id:
+                all_rows = dictify_all(query_all(f"SELECT * FROM {tname} WHERE patient_id={P} ORDER BY id", (patient_id,)))
+            else:
+                all_rows = dictify_all(query_all(f"SELECT * FROM {tname} ORDER BY id"))
+        except Exception:
+            all_rows = []
+        # 只保留 matched 列
+        matched_keys = [m['col_key'] for m in matched]
+        filtered_rows = []
+        for r in all_rows:
+            fr = {'id': r['id'], 'row_label': r['row_label']}
+            for mk in matched_keys:
+                fr[mk] = r.get(mk)
+            filtered_rows.append(fr)
+        results.append({
+            'type': 'indicator',
+            'key': sk,
+            'sheet_display': info['display'],
+            'matched_cols': [{'key': m['col_key'], 'display': m['col_display']} for m in matched],
+            'rows': filtered_rows,
+        })
+
+    # 整理日期搜索结果：按分表分组
+    row_groups = {}
+    for sk, sdisp, tname, r in row_matches:
+        if sk not in row_groups:
+            info = SHEETS.get(sk)
+            row_groups[sk] = {
+                'sheet_display': sdisp,
+                'columns': info['columns'] if info else [],
+                'rows': [],
+            }
+        row_groups[sk]['rows'].append(r)
+
+    for sk, rg in row_groups.items():
+        results.append({
+            'type': 'label',
+            'key': sk,
+            'sheet_display': rg['sheet_display'],
+            'columns': rg['columns'],
+            'rows': rg['rows'],
+        })
+
+    return render_template('search.html', q=q, results=results)
+
+
+# ================= 16. API：添加指标列（仅管理员） =================
+@app.route('/api/columns/<key>/add', methods=['POST'])
+@admin_required
+def api_add_column(key):
+    info = SHEETS.get(key)
+    if not info:
+        return jsonify({'error': 'not found'}), 404
+
+    payload = request.get_json(force=True) or {}
+    col_name = str(payload.get('name', '')).strip()
+    col_type = payload.get('type', 'numeric')
+
+    if not col_name:
+        return jsonify({'error': '请输入指标名称'}), 400
+
+    for c in info['columns']:
+        if c['display'] == col_name:
+            return jsonify({'error': f'指标 "{col_name}" 已存在'}), 400
+
+    tname = info['table_name']
+    existing_cols = info['columns']
+    new_col_key = f'col_{len(existing_cols) + 1}'
+
+    max_order = max((c.get('col_order', 0) for c in existing_cols), default=0)
+    new_order = max_order + 1
+
+    if use_mysql():
+        sql_type = 'DOUBLE' if col_type == 'numeric' else 'VARCHAR(255)'
+        execute(f"ALTER TABLE `{tname}` ADD COLUMN `{new_col_key}` {sql_type} DEFAULT NULL")
+    else:
+        sql_type = 'REAL' if col_type == 'numeric' else 'TEXT'
+        execute(f"ALTER TABLE {tname} ADD COLUMN {new_col_key} {sql_type} DEFAULT NULL")
+
+    sheet_order = info.get('order', 0)
+    execute(
+        f"INSERT INTO _meta_columns(sheet_key, sheet_display, col_key, col_display, col_order, sheet_order) VALUES({P},{P},{P},{P},{P},{P})",
+        (key, info['display'], new_col_key, col_name, new_order, sheet_order)
+    )
+
+    load_sheets()
+
+    return jsonify({'ok': True, 'col_key': new_col_key, 'display': col_name})
+
+
+# ================= 17. API：参考范围（仅管理员） =================
+@app.route('/api/refs/<key>', methods=['GET', 'POST'])
+@login_required
+def api_refs(key):
+    """获取/设置指标的参考范围"""
+    info = SHEETS.get(key)
+    if not info:
+        return jsonify({'error': 'not found'}), 404
+
+    if request.method == 'GET':
+        refs = query_all(f"SELECT col_key, ref_min, ref_max FROM indicator_refs WHERE sheet_key={P}", (key,))
+        result = {}
+        for r in refs:
+            result[r['col_key']] = {
+                'ref_min': r['ref_min'],
+                'ref_max': r['ref_max'],
+            }
+        return jsonify(result)
+
+    # POST: 仅管理员可设置
+    user = current_user()
+    if not user or user['role'] != 'admin':
+        return jsonify({'error': '仅管理员可操作'}), 403
+
+    payload = request.get_json(force=True) or {}
+    col_key = payload.get('col_key', '')
+    ref_min = payload.get('ref_min')
+    ref_max = payload.get('ref_max')
+
+    if not col_key:
+        return jsonify({'error': '缺少 col_key'}), 400
+
+    # 验证列存在
+    valid = any(c['key'] == col_key for c in info['columns'])
+    if not valid:
+        return jsonify({'error': '列不存在'}), 400
+
+    # 转为 float 或 None
+    try:
+        ref_min = float(ref_min) if ref_min not in (None, '') else None
+    except (ValueError, TypeError):
+        ref_min = None
+    try:
+        ref_max = float(ref_max) if ref_max not in (None, '') else None
+    except (ValueError, TypeError):
+        ref_max = None
+
+    # UPSERT
+    existing = query_one(f"SELECT id FROM indicator_refs WHERE sheet_key={P} AND col_key={P}", (key, col_key))
+    if existing:
+        execute(f"UPDATE indicator_refs SET ref_min={P}, ref_max={P} WHERE id={P}", (ref_min, ref_max, existing['id']))
+    else:
+        execute(f"INSERT INTO indicator_refs(sheet_key, col_key, ref_min, ref_max) VALUES({P},{P},{P},{P})", (key, col_key, ref_min, ref_max))
+
+    return jsonify({'ok': True, 'ref_min': ref_min, 'ref_max': ref_max})
+
+
+# ================= 18. API：导出 CSV =================
+@app.route('/api/export/<key>')
+@login_required
+@patient_selected_required
+def api_export(key):
+    """导出分表数据为 CSV"""
+    info = SHEETS.get(key)
+    if not info:
+        abort(404)
+
+    user = current_user()
+    patient_id = session.get('patient_id') if (user and user['role'] != 'admin') else None
+    rows = get_rows(key, patient_id)
+    columns = info['columns']
+
+    import csv
+    import io
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # 表头
+    headers = ['日期/编号'] + [c['display'] for c in columns]
+    writer.writerow(headers)
+
+    # 数据行
+    for r in rows:
+        writer.writerow([r.get('row_label', '')] + [r.get(c['key'], '') for c in columns])
+
+    csv_data = output.getvalue()
+    output.close()
+
+    # 文件名
+    filename = f'{info["display"]}.csv'
+    # URL 编码文件名
+    from urllib.parse import quote
+    encoded = quote(filename)
+
+    return (csv_data, 200, {
+        'Content-Type': 'text/csv; charset=utf-8-sig',
+        'Content-Disposition': f'attachment; filename*=UTF-8\'\'{encoded}',
+    })
+
+
+# ================= 19. 获取参考范围（辅助函数，用于模板） =================
+def get_ref_ranges(sheet_key):
+    """获取分表所有列的参考范围"""
+    refs = query_all(f"SELECT col_key, ref_min, ref_max FROM indicator_refs WHERE sheet_key={P}", (sheet_key,))
+    result = {}
+    for r in refs:
+        result[r['col_key']] = {
+            'ref_min': r['ref_min'],
+            'ref_max': r['ref_max'],
+        }
+    return result
+
+
+# ================= 20. 错误处理 =================
 @app.errorhandler(404)
 def not_found(e):
     return render_template('error.html', message='页面不存在', code=404), 404
 
 
-# ================= 15. 启动入口 =================
+# ================= 18. 启动入口 =================
 if __name__ == '__main__':
-    # 先加载分表元数据
     load_sheets()
-    # 如果没有数据表，重新初始化
     if not SHEETS:
         print("数据库未初始化，正在从 Excel 导入...")
         from init_db import init_db
