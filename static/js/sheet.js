@@ -671,15 +671,20 @@
             });
         }
 
-        // ---- 自动弹出（仅在首次或内容更新时）----
+        // ---- 红点 + 自动弹出（受 localStorage 控制）----
         var hasBrief = !!$('#briefContent').querySelector('.brief-placeholder') === false;
+        var dismissed = '';
         if (hasBrief && patientId && briefDate) {
-            var dismissed = '';
             try { dismissed = localStorage.getItem('brief_dismissed_p' + patientId.value) || ''; } catch (e) {}
-            // 如果从未读过，或日期变了（内容更新了），则自动弹出
-            if (!dismissed || dismissed !== briefDate) {
-                setTimeout(function () { showModal(); }, 400);
-            }
+        }
+        // 红点：已读则隐藏，未读才显示
+        var dot = trigger ? trigger.querySelector('.brief-dot') : null;
+        if (dot && dismissed === briefDate) {
+            dot.remove();
+        }
+        // 自动弹出：仅当从未读过或内容更新时
+        if (hasBrief && patientId && briefDate && dismissed !== briefDate) {
+            setTimeout(function () { showModal(); }, 400);
         }
 
         // ---- 管理员编辑 ----
