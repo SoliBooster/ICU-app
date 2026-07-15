@@ -35,40 +35,62 @@
 <input type="hidden" id="refRanges" value='{{ ref_ranges | tojson }}'>
 <input type="hidden" id="briefPatientId" value="{{ brief_patient_id }}">
 
-<!-- 今日简报 -->
-<section class="card brief-card" id="briefCard">
-    <div class="card-head">
-        <div class="card-title">
-            <span class="card-icon">📋</span>
-            <span>今日简报</span>
-            <span class="badge" id="briefDate">{{ brief_updated[:10] if brief_updated else today }}</span>
+<!-- 今日简报弹窗 -->
+{% if brief_content or is_admin %}
+<button class="brief-trigger" id="briefTrigger" title="今日简报">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+    </svg>
+    {% if brief_content %}<span class="brief-dot"></span>{% endif %}
+</button>
+{% endif %}
+
+<div class="brief-modal" id="briefModal">
+    <div class="brief-modal-card">
+        <div class="brief-modal-head">
+            <div class="brief-modal-title">
+                <span class="brief-modal-icon">📋</span>
+                <span>今日简报</span>
+                <span class="badge" id="briefDate">{{ brief_updated[:10] if brief_updated else today }}</span>
+            </div>
+            <button class="icon-btn" id="briefCloseBtn" title="关闭">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
         </div>
-        {% if is_admin %}
-        <button class="btn btn-ghost btn-sm" id="briefEditBtn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-            <span class="btn-text">编辑</span>
-        </button>
-        {% endif %}
-    </div>
-    <div class="card-body brief-body" id="briefBody">
-        <div class="brief-content" id="briefContent">
-            {% if brief_content %}
-            {{ brief_content | replace('\n', '<br>') | safe }}
-            {% else %}
-            <p class="brief-placeholder">暂无简报，管理员可点击编辑添加</p>
+        <div class="brief-modal-body">
+            <div class="brief-content" id="briefContent">
+                {% if brief_content %}
+                {{ brief_content | replace('\n', '<br>') | safe }}
+                {% else %}
+                <p class="brief-placeholder">暂无简报，管理员可点击下方按钮添加</p>
+                {% endif %}
+            </div>
+            {% if is_admin %}
+            <div class="brief-edit-wrap" id="briefEditWrap" style="display:none;">
+                <textarea id="briefTextarea" class="cell-input textarea-input"
+                          placeholder="输入今日病情简报，例如：&#10;&#10;• 患者目前意识清楚，生命体征平稳&#10;• 血常规示白细胞计数较前下降，提示感染控制良好&#10;• 明日计划：复查血气分析，评估呼吸功能"
+                          rows="6">{{ brief_content }}</textarea>
+                <div class="brief-edit-actions">
+                    <button class="btn btn-ghost" id="briefCancelBtn">取消</button>
+                    <button class="btn btn-primary" id="briefSaveBtn">保存简报</button>
+                </div>
+            </div>
             {% endif %}
         </div>
-        <div class="brief-edit-wrap" id="briefEditWrap" style="display:none;">
-            <textarea id="briefTextarea" class="cell-input textarea-input"
-                      placeholder="输入今日病情简报，例如：&#10;&#10;• 患者目前意识清楚，生命体征平稳&#10;• 血常规示白细胞计数较前下降，提示感染控制良好&#10;• 明日计划：复查血气分析，评估呼吸功能"
-                      rows="6">{{ brief_content }}</textarea>
-            <div class="brief-edit-actions">
-                <button class="btn btn-ghost" id="briefCancelBtn">取消</button>
-                <button class="btn btn-primary" id="briefSaveBtn">保存简报</button>
-            </div>
+        <div class="brief-modal-foot">
+            {% if is_admin %}
+            <button class="btn btn-ghost btn-sm" id="briefEditBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                <span class="btn-text">编辑简报</span>
+            </button>
+            {% endif %}
+            {% if brief_content %}
+            <button class="btn btn-primary" id="briefAckBtn">已知晓 ✓</button>
+            {% endif %}
         </div>
     </div>
-</section>
+</div>
 
 <!-- 数据表格 -->
 <section class="card">

@@ -620,64 +620,122 @@
         if (btn) btn.disabled = false;
     }
 
-    // ---------- 今日简报（服务端渲染，JS仅处理编辑） ----------
+        // ---------- 今日简报（弹窗模式） ----------
     function initBrief() {
-        var editBtn = $('#briefEditBtn');
-        if (!editBtn) return;
+        var modal = $('#briefModal');
+        var trigger = $('#briefTrigger');
+        var closeBtn = $('#briefCloseBtn');
+        var ackBtn = $('#briefAckBtn');
+        var patientId = $('#briefPatientId');
+        if (!modal) return;
 
-        var patientId = $('#briefPatientId').value;
-        var contentEl = $('#briefContent');
-        var editWrap = $('#briefEditWrap');
-        var textarea = $('#briefTextarea');
-        var saveBtn = $('#briefSaveBtn');
-        var cancelBtn = $('#briefCancelBtn');
+        var briefDateEl = $('#briefDate');
+        var briefDate = briefDateEl ? briefDateEl.textContent.trim() : '';
 
-        editBtn.addEventListener('click', function () {
-            // 从当前显示内容取文本（去掉<br>就是纯文本）
-            textarea.value = contentEl.textContent.trim() === '暂无简报，管理员可点击编辑添加'
-                ? '' : contentEl.textContent.trim();
-            contentEl.style.display = 'none';
-            editBtn.style.display = 'none';
-            editWrap.style.display = 'block';
-            textarea.focus();
-        });
-
-        function cancelEdit() {
-            editWrap.style.display = 'none';
-            contentEl.style.display = 'block';
-            if (editBtn) editBtn.style.display = '';
+        // ---- 弹窗控制 ----
+        function showModal() {
+            modal.classList.add('show');
+        }
+        function hideModal() {
+            modal.classList.remove('show');
         }
 
-        cancelBtn.addEventListener('click', cancelEdit);
+        if (closeBtn) closeBtn.addEventListener('click', hideModal);
+        if (trigger) trigger.addEventListener('click', showModal);
 
-        saveBtn.addEventListener('click', function () {
-            var content = textarea.value.trim();
-            saveBtn.disabled = true;
-            saveBtn.textContent = '保存中…';
-
-            fetch(apiUrl('/api/brief/' + patientId), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: content })
-            }).then(function (r) { return r.json(); }).then(function (res) {
-                if (res.ok) {
-                    showToast('简报已保存 ✓', 'success');
-                    // 保存成功后刷新页面，让服务端重新渲染
-                    location.reload();
-                } else {
-                    showToast(res.error || '保存失败', 'error');
-                }
-                saveBtn.disabled = false;
-                saveBtn.textContent = '保存简报';
-            }).catch(function () {
-                showToast('网络错误', 'error');
-                saveBtn.disabled = false;
-                saveBtn.textContent = '保存简报';
-            });
+        // 点击遮罩关闭
+        modal.addEventListener('click', function (e) {
+            if (e.target === modal) hideModal();
         });
+
+        // ESC 键关闭
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && modal.classList.contains('show')) {
+                hideModal();
+            }
+        });
+
+        // ---- 已知晓按钮 ----
+        if (ackBtn) {
+            ackBtn.addEventListener('click', function () {
+                // 记录已读：使用 patientId + 日期作为 key
+                if (patientId && briefDate) {
+                    try {
+                        localStorage.setItem('brief_dismissed_p' + patientId.value, briefDate);
+                    } catch (e) {}
+                }
+                hideModal();
+                // 移除红点
+                var dot = trigger ? trigger.querySelector('.brief-dot') : null;
+                if (dot) dot.remove();
+            });
+        }
+
+        // ---- 自动弹出（仅在首次或内容更新时）----
+        var hasBrief = !!$('#briefContent').querySelector('.brief-placeholder') === false;
+        if (hasBrief && patientId && briefDate) {
+            var dismissed = '';
+            try { dismissed = localStorage.getItem('brief_dismissed_p' + patientId.value) || ''; } catch (e) {}
+            // 如果从未读过，或日期变了（内容更新了），则自动弹出
+            if (!dismissed || dismissed !== briefDate) {
+                setTimeout(function () { showModal(); }, 400);
+            }
+        }
+
+        // ---- 管理员编辑 ----
+        var editBtn = $('#briefEditBtn');
+        if (editBtn) {
+            var contentEl = $('#briefContent');
+            var editWrap = $('#briefEditWrap');
+            var textarea = $('#briefTextarea');
+            var saveBtn = $('#briefSaveBtn');
+            var cancelBtn = $('#briefCancelBtn');
+
+            editBtn.addEventListener('click', function () {
+                textarea.value = contentEl.textContent.trim() === '暂无简报，管理员可点击下方按钮添加'
+                    ? '' : contentEl.textContent.trim();
+                contentEl.style.display = 'none';
+                editBtn.style.display = 'none';
+                editWrap.style.display = 'block';
+                textarea.focus();
+            });
+
+            function cancelEdit() {
+                editWrap.style.display = 'none';
+                contentEl.style.display = 'block';
+                if (editBtn) editBtn.style.display = '';
+            }
+
+            if (cancelBtn) cancelBtn.addEventListener('click', cancelEdit);
+
+            if (saveBtn) saveBtn.addEventListener('click', function () {
+                var content = textarea.value.trim();
+                saveBtn.disabled = true;
+                saveBtn.textContent = '保存中…';
+
+                fetch(apiUrl('/api/brief/' + patientId.value), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: content })
+                }).then(function (r) { return r.json(); }).then(function (res) {
+                    if (res.ok) {
+                        showToast('简报已保存 ✓', 'success');
+                        location.reload();
+                    } else {
+                        showToast(res.error || '保存失败', 'error');
+                    }
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = '保存简报';
+                }).catch(function () {
+                    showToast('网络错误', 'error');
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = '保存简报';
+                });
+            });
+        }
     }
 
-    // ---------- 启动 ----------
+    // ---------- 启动 ----------    // ---------- 启动 ----------
     document.addEventListener('DOMContentLoaded', function () {
         initColChips();
         renderLineChart();
